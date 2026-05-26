@@ -10,6 +10,20 @@ npm run typecheck
 npm run web
 ```
 
+## Build and install on iPhone with Xcode
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Generate the iOS native project:
+   ```bash
+   npm run ios:prebuild
+   ```
+3. Open `/tmp/workspace/Tristan-Samuel/Momentum/ios/Momentum.xcworkspace` in Xcode.
+4. In Xcode, set your Apple Team under **Signing & Capabilities**.
+5. Connect your iPhone by cable, trust the computer/device, choose your iPhone as the run target, then press **Run**.
+
 ## a-Shell setup
 
 If you want to use **a-Shell** on iOS for basic setup and publishing:
