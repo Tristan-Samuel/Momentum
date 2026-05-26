@@ -3,6 +3,9 @@
     "name": "Momentum",
     "slug": "momentum",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "momentum",
@@ -23,6 +26,10 @@
       "expo-sqlite",
       "expo-notifications"
     ],
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "web": {
       "favicon": "./assets/favicon.png"
     }
