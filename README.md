@@ -41,6 +41,28 @@ Notes:
 - Running the full native Expo dev flow is limited on iOS terminals; use a Mac + Xcode for full iOS local development.
 - a-Shell is best used for project setup, type checks, and EAS update publishing commands.
 
+## a-Shell mobile webview bundle
+
+A simplified browser-only build is included in `/tmp/workspace/Tristan-Samuel/Momentum/dist`:
+- `index.html`
+- `style.css`
+- `app.js` (single bundled client-side script)
+
+To rebuild it locally:
+
+```bash
+npx esbuild mobile/main.ts --bundle --platform=browser --target=es2020 --outfile=dist/app.js
+cp mobile/index.html dist/index.html
+cp mobile/style.css dist/style.css
+```
+
+Open it in a-Shell with:
+
+```bash
+cd /tmp/workspace/Tristan-Samuel/Momentum/dist
+view index.html
+```
+
 ## OTA auto-updates
 
 - This repo now includes Expo OTA update settings in `app.json` (`updates.checkAutomatically: ON_LOAD` and `runtimeVersion.policy: appVersion`).
