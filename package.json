@@ -9,7 +9,8 @@
     "ios": "expo start --ios",
     "ios:prebuild": "expo prebuild --platform ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mobile:build": "esbuild mobile/main.ts --bundle --platform=browser --target=es2020 --outfile=dist/app.js && cp mobile/index.html dist/index.html && cp mobile/style.css dist/style.css"
   },
   "dependencies": {
     "@expo/metro-runtime": "56.0.12",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@types/react": "19.2.2",
+    "esbuild": "^0.28.0",
     "typescript": "6.0.3"
   }
 }
