@@ -423,6 +423,22 @@ export async function saveProgression(state: ProgressionState): Promise<void> {
   await db.progressionStates.put({ ...state, updatedAt: nowIso(), syncStatus: 'local' });
 }
 
+export async function updateCurrentTargets(
+  exerciseId: string,
+  currentTargets: number[],
+): Promise<void> {
+  const current = await getProgression(exerciseId);
+  if (!current) return;
+  const next = currentTargets.map((value) => Math.max(1, Math.round(value)));
+  await db.progressionStates.put({
+    ...current,
+    currentTargets: next,
+    recommendedNextTargets: next,
+    updatedAt: nowIso(),
+    syncStatus: 'local',
+  });
+}
+
 export async function applyProgressionTargets(input: {
   exerciseId: string;
   currentTargets: number[];

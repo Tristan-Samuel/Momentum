@@ -3,7 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { audioEngine } from '@/audio-engine/engine';
 import * as repo from '@/database/repository';
 import { haptics, wakeLock } from '@/platform';
-import { notifyRestComplete } from '@/platform/notifications';
+import {
+  cancelRestCompleteAlert,
+  notifyRestComplete,
+  restAlertKey,
+  scheduleRestCompleteAlert,
+} from '@/platform/notifications';
 import { PerformanceClock } from '@/timing-engine/clock';
 import { WorkoutEngine } from '@/workout-engine/engine';
 import { persistEngineEvents } from '@/workout-engine/persist';
@@ -38,7 +43,34 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
   useEffect(() => {
     let cancelled = false;
     let raf = 0;
+    let notificationsEnabled = false;
+    let lastAlertKey: string | null = null;
     const clock = new PerformanceClock();
+
+    const syncRestAlert = (next: WorkoutView) => {
+      const key = restAlertKey({
+        kind: next.kind === 'paused' ? next.pausedKind ?? next.kind : next.kind,
+        exerciseIndex: next.exerciseIndex,
+        setIndex: next.setIndex,
+        restTotal: next.restTotal,
+      });
+      if (key === lastAlertKey) return;
+      lastAlertKey = key;
+      if (!key) {
+        void cancelRestCompleteAlert();
+        return;
+      }
+      const label =
+        next.kind === 'exercise_transition' || next.pausedKind === 'exercise_transition'
+          ? 'Transition is over. Next exercise.'
+          : 'Rest is over. Next set.';
+      void scheduleRestCompleteAlert({
+        enabled: notificationsEnabled,
+        title: 'Momentum',
+        body: `${label} ${next.nextExerciseName ?? next.exerciseName} · ${next.nextTarget} reps`,
+        inSeconds: next.restRemaining,
+      });
+    };
 
     const bindControls = (engine: WorkoutEngine): WorkoutControls => ({
       pause: () => engine.pause(),
@@ -63,6 +95,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
     const boot = async () => {
       try {
         const settings = await repo.getSettings();
+        notificationsEnabled = settings.notificationsEnabled;
         audioEngine.configure({
           profile: settings.soundsEnabled ? settings.soundProfile : 'silent',
           volume: settings.volume,
@@ -102,12 +135,15 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
 
         await flush(engine);
         if (cancelled) return;
-        setView(engine.getView());
+        const initial = engine.getView();
+        setView(initial);
+        syncRestAlert(initial);
 
         const loop = () => {
           if (cancelled || !engineRef.current) return;
           const next = engineRef.current.sync();
           setView({ ...next });
+          syncRestAlert(next);
           const events = engineRef.current.drainEvents();
           if (next.kind === 'workout_complete') {
             void wakeLock.release();
@@ -155,6 +191,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', onVisibility);
       audioEngine.cancel();
+      void cancelRestCompleteAlert();
       void wakeLock.release();
     };
   }, [navigate, resumeSessionId]);

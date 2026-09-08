@@ -56,9 +56,12 @@ export function ReviewScreen() {
               {progression?.recommendedResistanceChange?.type === 'increase' ? (
                 <div className="mt-4 rounded-2xl border border-[var(--line)] p-4">
                   <p className="text-sm tracking-[0.16em] text-[var(--muted)]">PROGRESSION</p>
-                  <p className="mt-2">Increase difficulty, then reset toward the bottom of the range.</p>
+                  <p className="mt-2">
+                    You topped the range. Make the movement harder (more weight, a tougher
+                    variation), then the next targets reset toward the bottom of the range.
+                  </p>
                   <p className="mt-1 text-[var(--muted)]">
-                    Suggested next: {progression.recommendedNextTargets.join(', ')} reps
+                    After you apply: {progression.recommendedNextTargets.join(', ')} reps
                   </p>
                   <Button
                     className="mt-4 w-full"
@@ -75,7 +78,8 @@ export function ReviewScreen() {
                 </div>
               ) : progression ? (
                 <p className="mt-3 text-[var(--muted)]">
-                  Next target: {progression.currentTargets.join(', ')}
+                  Next session: {progression.currentTargets.join(', ')} reps. Hit a set&apos;s
+                  target and the app adds 1 next time, up to {exercise.configSnapshot.maxReps}.
                 </p>
               ) : null}
             </div>

@@ -390,6 +390,11 @@ export class WorkoutEngine {
       laterality: item.laterality,
       setCompleteReps,
       workoutComplete: this.kind === 'workout_complete',
+      targetRepsPerSet: this.actualTargets[this.exerciseIndex]?.slice() ?? [],
+      minReps: item.minReps,
+      maxReps: item.maxReps,
+      targetRirMin: item.targetRirMin,
+      targetRirMax: item.targetRirMax,
     };
   }
 
@@ -758,6 +763,11 @@ function emptyView(engine: WorkoutEngine): WorkoutView {
     laterality: 'bilateral',
     setCompleteReps: 0,
     workoutComplete: engine.kind === 'workout_complete',
+    targetRepsPerSet: [],
+    minReps: 0,
+    maxReps: 0,
+    targetRirMin: 0,
+    targetRirMax: 0,
   };
 }
 

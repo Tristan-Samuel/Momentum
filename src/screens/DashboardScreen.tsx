@@ -4,6 +4,7 @@ import { Button } from '@/components/Button';
 import { usePreparedWorkout } from '@/hooks/usePreparedWorkout';
 import { completedWorkoutCount, lastCompletedSession } from '@/database/repository';
 import { estimateWorkoutMinutes, totalPrescribedSets } from '@/utils/duration';
+import { formatTodayPlan } from '@/utils/prescription';
 import { formatDate, greetingForNow } from '@/utils/time';
 import { audioEngine } from '@/audio-engine/engine';
 
@@ -34,10 +35,19 @@ export function DashboardScreen() {
           <span className="mx-2">·</span>
           ~{minutes} min
         </p>
+        <ul className="mt-6 space-y-4">
+          {prepared.exercises.map((item) => (
+            <li key={item.id}>
+              <p className="text-lg font-medium">{item.exercise.name}</p>
+              <p className="mt-1 text-[var(--muted)]">{formatTodayPlan(item)}</p>
+              <p className="mt-0.5 text-sm text-[var(--muted)]">{item.progression.resistanceLabel}</p>
+            </li>
+          ))}
+        </ul>
         <Button
           className="mt-8 w-full py-5 text-xl tracking-[0.08em]"
-          onClick={async () => {
-            await audioEngine.unlock();
+          onClick={() => {
+            void audioEngine.unlock();
             navigate('/workout');
           }}
         >

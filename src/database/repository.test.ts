@@ -8,6 +8,7 @@ import {
   saveEngineSnapshot,
   getIncompleteSession,
   discardWorkoutSession,
+  updateCurrentTargets,
 } from '@/database/repository';
 
 afterEach(async () => {
@@ -33,6 +34,14 @@ describe('repository', () => {
       concentric: 1,
       topPause: 0,
     });
+  });
+
+  it('lets the user set today’s targets', async () => {
+    const prepared = await getPreparedWorkout();
+    const chinUp = prepared.exercises[0];
+    await updateCurrentTargets(chinUp.exerciseId, [7, 9]);
+    const next = await getPreparedWorkout();
+    expect(next.exercises[0].progression.currentTargets).toEqual([7, 9]);
   });
 
   it('keeps settings locally', async () => {

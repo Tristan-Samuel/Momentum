@@ -10,25 +10,32 @@ This is not a social fitness app. It is a training instrument for one person, on
 
 - Runs a prescribed workout with a pre-set countdown, tempo-cued reps, rest timers, and exercise transitions.
 - Plays Web Audio cues (start, tick, phase beep, warning, set complete) and optional haptics.
+- Shows today’s sets and reps for each exercise on Home before you tap Start.
 - Lets you log actual reps, skip a set, reduce the target mid-set, and rate difficulty / RIR / form.
 - Recommends the next session’s targets from a simple rep-range progression (hold, add a rep, or increase difficulty and reset toward the bottom of the range).
 - Stores programs, sessions, personal records, and settings in IndexedDB via Dexie. Works fully offline after the first load.
 - Resumes an incomplete workout if you leave mid-session.
 - Tracks history, lifetime totals, and per-exercise trends on the Progress screen.
 
+
+
 ### Screens
 
-| Route | Purpose |
-| --- | --- |
-| Home | Next workout card, last session, completed-workout count |
-| Workout | Full-screen runner (countdown, set, rest, transition) |
-| Review | Post-workout summary and apply-progression prompt |
-| History | Past sessions and per-session detail |
-| Progress | Rep and resistance trends plus personal records |
-| Program | Edit program name, exercises, sets, tempo, rest, laterality |
+
+| Route    | Purpose                                                                        |
+| -------- | ------------------------------------------------------------------------------ |
+| Home     | Next workout card, last session, completed-workout count                       |
+| Workout  | Full-screen runner (countdown, set, rest, transition)                          |
+| Review   | Post-workout summary and apply-progression prompt                              |
+| History  | Past sessions and per-session detail                                           |
+| Progress | Rep and resistance trends plus personal records                                |
+| Program  | Edit program name, exercises, sets, tempo, rest, laterality                    |
 | Settings | Theme, sound profile, volume, haptics, wake lock, notifications, accessibility |
 
+
 ---
+
+
 
 ## Default program
 
@@ -39,7 +46,13 @@ This is not a social fitness app. It is a training instrument for one person, on
 3. Weighted / Difficult Push-Up — 2×6–12, tempo 3-0-1-0, rest 120s
 4. Pistol Squat — 2×5–8 per leg, tempo 3-1-1-0, rest 150s (right then left)
 
-Tempo is written `eccentric-bottom-concentric-top` in seconds. You can rename the program, change any prescription, or add/remove exercises on the Program screen.
+Tempo is written `eccentric-bottom-concentric-top` in seconds: **lower, pause at the bottom, lift, pause at the top**. Chin-up `3-0-1-0` is 3 seconds down, no pause, 1 second up, no hold at the top.
+
+**Min / max** is the training range, not today’s count. The first session targets the midpoint (chin-up 6–10 starts at **2 × 8**). **RIR** is reps in reserve — how many more you could have done. Target 1–2 means stop 1 or 2 reps short of failure.
+
+**Transition** is the countdown after an exercise ends, before the next exercise starts. Rest between sets of the same exercise is the separate rest timer.
+
+You can rename the program, change any prescription, or add/remove exercises on the Program screen. Today’s targets can be edited there too.
 
 ### Progression (rep-range)
 
@@ -53,24 +66,30 @@ Unilateral work (pistol squat) uses the weaker-leg rep count for progression.
 
 ---
 
+
+
 ## Stack
 
-| Layer | Choice |
-| --- | --- |
-| UI | React 19, TypeScript, Vite 7, Tailwind CSS 4 |
-| Routing | React Router 7 |
-| Storage | Dexie.js / IndexedDB (`momentum` database) |
-| Audio | Web Audio API (`src/audio-engine`) |
-| Timing | Wall-clock scheduler (`src/timing-engine`) |
-| Workout state | Deterministic engine (`src/workout-engine`) |
-| Native shell | Capacitor 8 (`appId`: `com.momentum.workout`) |
+
+| Layer          | Choice                                                 |
+| -------------- | ------------------------------------------------------ |
+| UI             | React 19, TypeScript, Vite 7, Tailwind CSS 4           |
+| Routing        | React Router 7                                         |
+| Storage        | Dexie.js / IndexedDB (`momentum` database)             |
+| Audio          | Web Audio API (`src/audio-engine`)                     |
+| Timing         | Wall-clock scheduler (`src/timing-engine`)             |
+| Workout state  | Deterministic engine (`src/workout-engine`)            |
+| Native shell   | Capacitor 8 (`appId`: `com.momentum.workout`)          |
 | Native plugins | `@capacitor/haptics`, `@capacitor/local-notifications` |
+
 
 Platform adapters in `src/platform/` keep the workout engine independent of the host. On the web they use Vibration, Wake Lock, and the Notifications API. Inside a Capacitor shell they call native haptics and local notifications when available.
 
 **Browser / web limits:** iOS Safari suspends `AudioContext` and throttles timers when the screen is locked or the tab is backgrounded. During a set, keep the phone face-up. Wake Lock is used when the browser supports it. Rest timers catch up from wall-clock time when you return. Native background audio is not implemented yet (`src/platform/background.ts`).
 
 ---
+
+
 
 ## Prerequisites
 
@@ -82,6 +101,8 @@ Install these on the Mac you will use to develop and to put the app on a phone.
 - **npm** (ships with Node). Confirm with `npm --version`.
 - A current browser (Chrome, Safari, or Firefox).
 
+
+
 ### Required to put it on an iPhone
 
 You are on macOS, so this is the main path.
@@ -89,13 +110,11 @@ You are on macOS, so this is the main path.
 - A Mac (iOS apps cannot be compiled on Windows/Linux).
 - **Xcode 26 or newer** from the Mac App Store. Capacitor 8 will not build with older Xcode.
 - **Xcode Command Line Tools:**
-
   ```bash
   xcode-select --install
   xcode-select -p
   # expect: /Applications/Xcode.app/Contents/Developer
   ```
-
 - A free **Apple ID** (the paid Apple Developer Program is only required if you want App Store / TestFlight or installs that last longer than 7 days).
 - A USB cable (or a paired Wi-Fi connection after the first USB pairing).
 - The iPhone unlocked, with a passcode, and **Developer Mode** enabled (iOS 16+).
@@ -109,6 +128,8 @@ CocoaPods is optional. Capacitor 8 defaults to Swift Package Manager.
 - USB debugging enabled on the phone.
 
 ---
+
+
 
 ## 1. Set up the project on your computer
 
@@ -124,14 +145,16 @@ Vite prints a local URL, usually `http://localhost:5173`. Open it. The first vis
 
 Useful scripts:
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Dev server with hot reload |
-| `npm test` | Vitest once (engines, progression, repository, cues, tempo) |
-| `npm run test:watch` | Vitest in watch mode |
-| `npm run build` | Typecheck and production bundle into `dist/` |
-| `npm run preview` | Serve the production bundle locally |
-| `npm run cap:sync` | Build, then copy `dist/` into native projects (`npx cap sync`) |
+
+| Command              | What it does                                                   |
+| -------------------- | -------------------------------------------------------------- |
+| `npm run dev`        | Dev server with hot reload                                     |
+| `npm test`           | Vitest once (engines, progression, repository, cues, tempo)    |
+| `npm run test:watch` | Vitest in watch mode                                           |
+| `npm run build`      | Typecheck and production bundle into `dist/`                   |
+| `npm run preview`    | Serve the production bundle locally                            |
+| `npm run cap:sync`   | Build, then copy `dist/` into native projects (`npx cap sync`) |
+
 
 The app does not call a server. After the first load, start a workout, log sets, and compute progression with no network.
 
@@ -146,6 +169,8 @@ If tests fail, fix that before packaging for a phone. The workout engine and pro
 
 ---
 
+
+
 ## 2. Using the app
 
 1. **Start workout** on Home. That tap also unlocks audio.
@@ -159,11 +184,13 @@ If tests fail, fix that before packaging for a phone. The workout engine and pro
 
 ---
 
+
+
 ## 3. Put it on your phone
 
 Pick one path. For daily training on an iPhone, use **Path A** (native Capacitor app). Use **Path B** for Android. Use **Path C** only for a quick Safari try — it will not keep a reliable metronome if the screen locks.
 
-The repo ships Capacitor config and plugins, but **does not yet include `ios/` or `android/` native projects**. You add those once, then rebuild whenever the web app changes.
+The repo includes the `ios/` native project. After web changes, run `npm run cap:sync` and run the app from Xcode again. Add Android later with `npx cap add android` if you need it.
 
 ### Path A — iPhone (recommended)
 
@@ -232,6 +259,8 @@ To try the UI without a device, pick an iPhone simulator in Xcode and press Play
 
 ---
 
+
+
 ### Path B — Android phone
 
 ```bash
@@ -257,16 +286,16 @@ and choose the device when prompted.
 
 ---
 
+
+
 ### Path C — Add to Home Screen (Safari / Chrome, no Xcode)
 
 Use this only to click through the UI on a phone. It is still a browser tab. iOS will suspend audio when the screen locks.
 
 1. On your Mac, start the dev server on the LAN:
-
-   ```bash
+  ```bash
    npm run dev -- --host
-   ```
-
+  ```
 2. Note the Network URL Vite prints, for example `http://192.168.1.20:5173`. Your phone and Mac must be on the same Wi-Fi. macOS may ask you to allow incoming connections — allow it.
 3. On the **iPhone**, open that URL in **Safari**.
 4. Share → **Add to Home Screen**. Name it Momentum.
@@ -282,6 +311,8 @@ npm run preview -- --host
 ```
 
 ---
+
+
 
 ## 4. Update the phone after you change code
 
@@ -322,6 +353,8 @@ The phone and Mac must share a network, and you must run `npm run dev -- --host`
 
 ---
 
+
+
 ## 5. After install: first workout on the phone
 
 1. Open **Momentum**. Allow notifications if you want rest-complete alerts (Settings → Notifications).
@@ -332,6 +365,8 @@ The phone and Mac must share a network, and you must run `npm run dev -- --host`
 If you used a free Apple ID, set a reminder to re-run from Xcode before day 7 or the icon will fail to launch until you refresh the signature.
 
 ---
+
+
 
 ## Project layout
 
@@ -359,6 +394,8 @@ Native folders after you add platforms:
 
 ---
 
+
+
 ## Data and privacy
 
 - Database name: `momentum` (IndexedDB).
@@ -369,24 +406,30 @@ Native folders after you add platforms:
 
 ---
 
+
+
 ## Troubleshooting
 
-| Symptom | What to try |
-| --- | --- |
-| No sound | Tap a Settings test cue first. Unmute the phone. Confirm Sounds is on and the profile is not Silent. |
-| Metronome dies when the screen locks | Expected on web and still expected in V1 native. Keep Awake on; leave the screen on during sets. |
-| Xcode: signing / team errors | Add your Apple ID under Xcode → Settings → Accounts. Unique bundle id if the default is claimed. |
-| Xcode: device not eligible / Developer Mode | Settings → Privacy & Security → Developer Mode, restart, confirm. |
-| Untrusted developer | Settings → General → VPN & Device Management → Trust. |
-| `npx cap add ios` / sync fails | `npm run build` so `dist/` exists. Node 22+. Xcode 26+. |
-| Stale UI on the phone | `npm run cap:sync`, then Run again. |
-| Free provisioning expired | Re-run from Xcode. Installs last 7 days. |
-| Android device missing | USB debugging on, accept the RSA prompt, try another cable/port. |
-| Resume overlay after a crash | Resume or Discard. Discard does not keep the partial session. |
 
-Official Capacitor references: [Environment setup](https://capacitorjs.com/docs/getting-started/environment-setup), [iOS](https://capacitorjs.com/docs/ios), [Android](https://capacitorjs.com/docs/android), [`cap run`](https://capacitorjs.com/docs/cli/commands/run).
+| Symptom                                     | What to try                                                                                          |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| No sound                                    | Rebuild the native app after this update. Raise ringer volume, tap a Settings test cue, and confirm Sounds is on. The Silent switch should no longer mute Web Audio. If the profile is Silent, tests still play a standard cue. |
+| Metronome dies when the screen locks        | Expected on web and still expected in V1 native. Keep Awake on; leave the screen on during sets.     |
+| Xcode: signing / team errors                | Add your Apple ID under Xcode → Settings → Accounts. Unique bundle id if the default is claimed.     |
+| Xcode: device not eligible / Developer Mode | Settings → Privacy & Security → Developer Mode, restart, confirm.                                    |
+| Untrusted developer                         | Settings → General → VPN & Device Management → Trust.                                                |
+| `npx cap add ios` / sync fails              | `npm run build` so `dist/` exists. Node 22+. Xcode 26+.                                              |
+| Stale UI on the phone                       | `npm run cap:sync`, then Run again.                                                                  |
+| Free provisioning expired                   | Re-run from Xcode. Installs last 7 days.                                                             |
+| Android device missing                      | USB debugging on, accept the RSA prompt, try another cable/port.                                     |
+| Resume overlay after a crash                | Resume or Discard. Discard does not keep the partial session.                                        |
+
+
+Official Capacitor references: [Environment setup](https://capacitorjs.com/docs/getting-started/environment-setup), [iOS](https://capacitorjs.com/docs/ios), [Android](https://capacitorjs.com/docs/android), `[cap run](https://capacitorjs.com/docs/cli/commands/run)`.
 
 ---
+
+
 
 ## Tests
 

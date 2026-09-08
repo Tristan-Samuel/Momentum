@@ -79,6 +79,11 @@ export type WorkoutView = {
   laterality: 'bilateral' | 'unilateral';
   setCompleteReps: number;
   workoutComplete: boolean;
+  targetRepsPerSet: number[];
+  minReps: number;
+  maxReps: number;
+  targetRirMin: number;
+  targetRirMax: number;
 };
 
 export function parseSnapshot(json: string): EngineSnapshotV1 | null {

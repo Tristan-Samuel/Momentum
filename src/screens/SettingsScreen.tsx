@@ -1,13 +1,17 @@
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
 import { updateSettings } from '@/database/repository';
 import { audioEngine } from '@/audio-engine/engine';
 import { TEST_CUES } from '@/audio-engine/profiles';
-import { requestNotificationPermission } from '@/platform/notifications';
+import { haptics } from '@/platform/haptics';
+import { requestNotificationPermission, sendTestNotification } from '@/platform/notifications';
 import type { SoundProfile, ThemePreference } from '@/types';
 
 export function SettingsScreen() {
   const settings = useSettings();
+  const [cueStatus, setCueStatus] = useState<string | null>(null);
+  const [notifyStatus, setNotifyStatus] = useState<string | null>(null);
   if (!settings) return <p className="text-[var(--muted)]">Loading…</p>;
 
   return (
@@ -76,9 +80,15 @@ export function SettingsScreen() {
           if (notificationsEnabled) {
             const ok = await requestNotificationPermission();
             await updateSettings({ notificationsEnabled: ok });
+            setNotifyStatus(
+              ok
+                ? 'Notifications allowed. Rest and transition will ping when time is up.'
+                : 'Permission denied. Enable notifications in iPhone Settings → Momentum.',
+            );
             return;
           }
           await updateSettings({ notificationsEnabled });
+          setNotifyStatus(null);
         }}
       />
       <Toggle
@@ -99,31 +109,66 @@ export function SettingsScreen() {
 
       <section className="mt-10">
         <p className="text-xs tracking-[0.22em] text-[var(--muted)]">TEST CUES</p>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
+          Raise the ringer volume. The iPhone Silent switch no longer mutes these tones. If the
+          profile is Silent, the test still plays a standard cue.
+        </p>
         <div className="mt-4 grid grid-cols-2 gap-3">
           {TEST_CUES.map((kind) => (
             <button
               key={kind}
               type="button"
               className="rounded-2xl border border-[var(--line)] px-4 py-4"
-              onClick={async () => {
+              onClick={() => {
+                const profile = settings.soundProfile === 'silent' ? 'standard' : settings.soundProfile;
                 audioEngine.configure({
-                  profile: settings.soundProfile,
-                  volume: settings.volume,
+                  profile,
+                  volume: Math.max(settings.volume, 0.35),
                   enabled: true,
                 });
-                await audioEngine.playNow(kind);
+                void (async () => {
+                  haptics.setEnabled(true);
+                  await haptics.trigger('start');
+                  haptics.setEnabled(settings.hapticsEnabled);
+                })();
+                void audioEngine.playNow(kind).then((played) => {
+                  setCueStatus(
+                    played
+                      ? `Played ${kind.replace('_', ' ')}`
+                      : 'No tone. Check volume, then tap again.',
+                  );
+                });
               }}
             >
               {kind.replace('_', ' ')}
             </button>
           ))}
         </div>
+        {cueStatus ? <p className="mt-3 text-sm text-[var(--muted)]">{cueStatus}</p> : null}
+      </section>
+
+      <section className="mt-8">
+        <p className="text-xs tracking-[0.22em] text-[var(--muted)]">TEST NOTIFICATION</p>
+        <button
+          type="button"
+          className="mt-4 w-full rounded-2xl border border-[var(--line)] px-4 py-4"
+          onClick={async () => {
+            const result = await sendTestNotification();
+            if (result.ok) {
+              await updateSettings({ notificationsEnabled: true });
+            }
+            setNotifyStatus(result.message);
+          }}
+        >
+          Send test alert
+        </button>
+        {notifyStatus ? <p className="mt-3 text-sm text-[var(--muted)]">{notifyStatus}</p> : null}
       </section>
 
       <p className="mt-10 text-sm leading-relaxed text-[var(--muted)]">
-        Browser workout mode cannot guarantee metronome playback if the screen is locked or the
-        app is backgrounded. Keep the screen on during sets. Native background audio is planned
-        through Capacitor.
+        Keep the screen on during sets so the metronome can keep ticking. Rest and transitions can
+        finish in the background; turn Notifications on if you want a ping when it is time to start
+        again.
       </p>
     </main>
   );

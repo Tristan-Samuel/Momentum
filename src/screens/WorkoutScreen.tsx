@@ -5,6 +5,7 @@ import { Button } from '@/components/Button';
 import { ProgressBar } from '@/components/ProgressBar';
 import { RingCountdown } from '@/components/RingCountdown';
 import { useWorkoutRunner, type WorkoutControls } from '@/hooks/useWorkoutRunner';
+import { formatRepList, formatRepRange, formatRirRange } from '@/utils/prescription';
 import { formatClock } from '@/utils/time';
 import type { DifficultyRating, FormQuality } from '@/types';
 import type { WorkoutView } from '@/workout-engine/types';
@@ -44,6 +45,14 @@ export function WorkoutScreen() {
             <h1 className="mt-2 text-3xl font-semibold leading-tight tracking-tight">
               {view.exerciseName}
             </h1>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Today {view.setCount} × {formatRepList(view.targetRepsPerSet)}
+              {view.laterality === 'unilateral' ? ' per side' : ''}
+              <span className="mx-2">·</span>
+              range {formatRepRange(view.minReps, view.maxReps)}
+              <span className="mx-2">·</span>
+              RIR {formatRirRange(view.targetRirMin, view.targetRirMax)}
+            </p>
           </div>
           <button
             type="button"

@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { usePreparedWorkout } from '@/hooks/usePreparedWorkout';
 import { Button } from '@/components/Button';
 import * as repo from '@/database/repository';
+import { formatTodayPlan, targetsForExercise } from '@/utils/prescription';
 import { formatTempo } from '@/utils/tempo';
-import type { ExerciseConfiguration, Laterality, UnilateralOrder } from '@/types';
+import type { ExerciseConfiguration, Laterality, ProgramExercise, UnilateralOrder } from '@/types';
 
 export function ConfigureScreen() {
   const prepared = usePreparedWorkout();
@@ -24,7 +25,7 @@ export function ConfigureScreen() {
       </label>
       <div className="mt-8 space-y-6">
         {prepared.exercises.map((item) => (
-          <ExerciseEditor key={item.id} config={item} name={item.exercise.name} />
+          <ExerciseEditor key={item.id} item={item} />
         ))}
       </div>
       {adding ? (
@@ -37,97 +38,124 @@ export function ConfigureScreen() {
           Add exercise
         </Button>
       )}
+      <Glossary />
     </main>
   );
 }
 
-function ExerciseEditor({
-  config,
-  name,
-}: {
-  config: ExerciseConfiguration;
-  name: string;
-}) {
+function ExerciseEditor({ item }: { item: ProgramExercise }) {
   const patch = (partial: Partial<ExerciseConfiguration>) =>
-    repo.updateExerciseConfiguration(config.id, partial);
+    repo.updateExerciseConfiguration(item.id, partial);
+  const today = targetsForExercise(item);
 
   return (
     <section className="rounded-3xl border border-[var(--line)] p-5">
       <input
         className="w-full bg-transparent text-2xl font-semibold text-[var(--fg)] outline-none"
-        defaultValue={name}
-        onBlur={(event) => void repo.updateExerciseName(config.exerciseId, event.target.value)}
+        defaultValue={item.exercise.name}
+        onBlur={(event) => void repo.updateExerciseName(item.exerciseId, event.target.value)}
       />
+      <p className="mt-2 text-sm text-[var(--muted)]">{formatTodayPlan(item)}</p>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <NumberField label="Sets" value={config.sets} onChange={(sets) => void patch({ sets })} />
+        <NumberField label="Sets" value={item.sets} onChange={(sets) => void patch({ sets })} />
         <TextField
           label="Resistance"
-          value={config.resistanceLabel}
+          value={item.resistanceLabel}
           onChange={(resistanceLabel) => void patch({ resistanceLabel })}
         />
-        <NumberField label="Min reps" value={config.minReps} onChange={(minReps) => void patch({ minReps })} />
-        <NumberField label="Max reps" value={config.maxReps} onChange={(maxReps) => void patch({ maxReps })} />
         <NumberField
-          label="Rest (sec)"
-          value={config.restAfterSetSeconds}
+          label="Min reps (range floor)"
+          value={item.minReps}
+          onChange={(minReps) => void patch({ minReps })}
+        />
+        <NumberField
+          label="Max reps (range ceiling)"
+          value={item.maxReps}
+          onChange={(maxReps) => void patch({ maxReps })}
+        />
+        <NumberField
+          label="Rest between sets (sec)"
+          value={item.restAfterSetSeconds}
           onChange={(restAfterSetSeconds) => void patch({ restAfterSetSeconds })}
         />
         <NumberField
-          label="Transition (sec)"
-          value={config.transitionAfterExerciseSeconds}
+          label="Transition to next exercise (sec)"
+          value={item.transitionAfterExerciseSeconds}
           onChange={(transitionAfterExerciseSeconds) => void patch({ transitionAfterExerciseSeconds })}
         />
         <NumberField
           label="Target RIR min"
-          value={config.targetRirMin}
+          value={item.targetRirMin}
           onChange={(targetRirMin) => void patch({ targetRirMin })}
         />
         <NumberField
           label="Target RIR max"
-          value={config.targetRirMax}
+          value={item.targetRirMax}
           onChange={(targetRirMax) => void patch({ targetRirMax })}
         />
       </div>
-      <p className="mt-4 text-sm text-[var(--muted)]">Tempo {formatTempo(config.tempo)}</p>
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <p className="mt-5 text-xs tracking-[0.18em] text-[var(--muted)]">TODAY&apos;S TARGETS</p>
+      <p className="mt-2 text-sm text-[var(--muted)]">
+        This is how many reps the next workout will ask for. Change a number to bump it now. After a
+        workout the app usually adds 1 if you hit the target.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {today.map((reps, index) => (
+          <NumberField
+            key={`${item.id}-target-${index}`}
+            label={`Set ${index + 1} reps`}
+            value={reps}
+            onChange={(value) => {
+              const next = today.slice();
+              next[index] = value;
+              void repo.updateCurrentTargets(item.exerciseId, next);
+            }}
+          />
+        ))}
+      </div>
+      <p className="mt-5 text-sm text-[var(--muted)]">
+        Tempo {formatTempo(item.tempo)} — seconds to lower, pause at the bottom, lift, then pause at
+        the top
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <NumberField
-          label="Ecc"
-          value={config.tempo.eccentric}
-          onChange={(eccentric) => void patch({ tempo: { ...config.tempo, eccentric } })}
+          label="Lower / eccentric (sec)"
+          value={item.tempo.eccentric}
+          onChange={(eccentric) => void patch({ tempo: { ...item.tempo, eccentric } })}
         />
         <NumberField
-          label="Bottom"
-          value={config.tempo.bottomPause}
-          onChange={(bottomPause) => void patch({ tempo: { ...config.tempo, bottomPause } })}
+          label="Bottom pause (sec)"
+          value={item.tempo.bottomPause}
+          onChange={(bottomPause) => void patch({ tempo: { ...item.tempo, bottomPause } })}
         />
         <NumberField
-          label="Con"
-          value={config.tempo.concentric}
-          onChange={(concentric) => void patch({ tempo: { ...config.tempo, concentric } })}
+          label="Lift / concentric (sec)"
+          value={item.tempo.concentric}
+          onChange={(concentric) => void patch({ tempo: { ...item.tempo, concentric } })}
         />
         <NumberField
-          label="Top"
-          value={config.tempo.topPause}
-          onChange={(topPause) => void patch({ tempo: { ...config.tempo, topPause } })}
+          label="Top hold (sec)"
+          value={item.tempo.topPause}
+          onChange={(topPause) => void patch({ tempo: { ...item.tempo, topPause } })}
         />
       </div>
       <label className="mt-4 block text-sm text-[var(--muted)]">
         Laterality
         <select
           className="mt-2 w-full rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-3 py-3 text-[var(--fg)]"
-          value={config.laterality}
+          value={item.laterality}
           onChange={(event) => void patch({ laterality: event.target.value as Laterality })}
         >
-          <option value="bilateral">Bilateral</option>
-          <option value="unilateral">Unilateral</option>
+          <option value="bilateral">Bilateral (both sides together)</option>
+          <option value="unilateral">Unilateral (one side at a time)</option>
         </select>
       </label>
-      {config.laterality === 'unilateral' ? (
+      {item.laterality === 'unilateral' ? (
         <label className="mt-3 block text-sm text-[var(--muted)]">
-          Leg order
+          Side order
           <select
             className="mt-2 w-full rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-3 py-3 text-[var(--fg)]"
-            value={config.unilateralOrder}
+            value={item.unilateralOrder}
             onChange={(event) =>
               void patch({ unilateralOrder: event.target.value as UnilateralOrder })
             }
@@ -142,10 +170,50 @@ function ExerciseEditor({
       <Button
         variant="ghost"
         className="mt-4 w-full"
-        onClick={() => void repo.removeExerciseFromProgram(config.id)}
+        onClick={() => void repo.removeExerciseFromProgram(item.id)}
       >
         Remove
       </Button>
+    </section>
+  );
+}
+
+function Glossary() {
+  return (
+    <section className="mt-12 pb-4">
+      <p className="text-xs tracking-[0.22em] text-[var(--muted)]">WHAT THE NUMBERS MEAN</p>
+      <dl className="mt-4 space-y-4 text-sm leading-relaxed text-[var(--muted)]">
+        <div>
+          <dt className="text-[var(--fg)]">Min / max reps</dt>
+          <dd className="mt-1">
+            The training range, not today&apos;s count. Today starts near the middle. The app adds a
+            rep after you hit a target, up to max. When every set hits max with the target RIR, it
+            asks you to make the move harder and resets toward the bottom of the range.
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[var(--fg)]">RIR — reps in reserve</dt>
+          <dd className="mt-1">
+            How many more reps you could have done with good form. Target 1–2 means stop 1 or 2
+            reps before failure. Rate this after each exercise. RIR 0 (failure) holds the current
+            targets.
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[var(--fg)]">Ecc / Bottom / Con / Top</dt>
+          <dd className="mt-1">
+            Tempo in seconds: eccentric (lowering), pause at the bottom, concentric (lifting), pause
+            at the top. 3-0-1-0 is 3 seconds down, no pause, 1 second up, no hold.
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[var(--fg)]">Transition time</dt>
+          <dd className="mt-1">
+            Countdown after this exercise finishes, before the next exercise starts. Rest between
+            sets of the same exercise is the separate rest field.
+          </dd>
+        </div>
+      </dl>
     </section>
   );
 }

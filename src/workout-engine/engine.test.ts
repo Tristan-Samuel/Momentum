@@ -100,6 +100,9 @@ describe('workout engine', () => {
     expect(view.kind).toBe('pre_set_countdown');
     expect(view.exerciseName).toBe('L-Sit Chin-Up');
     expect(view.countdown).toBe(3);
+    expect(view.targetRepsPerSet).toEqual([8, 8]);
+    expect(view.minReps).toBe(6);
+    expect(view.maxReps).toBe(10);
   });
 
   it('enters the set after countdown and counts reps from tempo', () => {
