@@ -20,8 +20,9 @@ export function BottomSheet({ open, title, onClose, children }: Props) {
       <div
         role="dialog"
         aria-label={title}
-        className="relative w-full max-w-xl rounded-t-3xl bg-[var(--panel)] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-[var(--fg)]"
+        className="animate-sheet-up relative w-full max-w-xl rounded-t-3xl bg-[var(--panel)] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-[var(--fg)]"
       >
+        <div className="mx-auto -mt-1 mb-3 h-1 w-10 rounded-full bg-[var(--line)]" />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm tracking-[0.22em] text-[var(--muted)]">{title}</h2>
           <button type="button" className="text-sm text-[var(--muted)]" onClick={onClose}>

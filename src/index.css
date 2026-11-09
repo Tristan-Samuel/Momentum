@@ -23,6 +23,7 @@
   --rest: #2c5d7c;
   --warn: #b45309;
   --ok: #2f6f4e;
+  --accent-soft: #f6e4d6;
 }
 
 .dark {
@@ -36,6 +37,7 @@
   --rest: #7eb6d6;
   --warn: #f0b35a;
   --ok: #7dca9f;
+  --accent-soft: #2a1d14;
 }
 
 html,
@@ -67,6 +69,50 @@ body {
 .reduced-motion *::after {
   animation: none !important;
   transition: none !important;
+}
+
+@keyframes momentum-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes momentum-sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes momentum-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.animate-fade-up {
+  animation: momentum-fade-up 220ms ease-out both;
+}
+
+.animate-sheet-up {
+  animation: momentum-sheet-up 200ms ease-out both;
+}
+
+.animate-pulse-soft {
+  animation: momentum-pulse 1s ease-in-out infinite;
 }
 
 .workout-frame {

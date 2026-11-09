@@ -33,7 +33,7 @@ export function ConfirmDialog({
       aria-labelledby="confirm-title"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-4 sm:items-center"
     >
-      <div className="w-full max-w-md rounded-3xl bg-[var(--panel)] p-6 text-[var(--fg)] shadow-2xl">
+      <div className="animate-sheet-up w-full max-w-md rounded-3xl bg-[var(--panel)] p-6 text-[var(--fg)] shadow-2xl">
         <p className="text-xs tracking-[0.2em] text-[var(--muted)]">{eyebrow}</p>
         <h2 id="confirm-title" className="mt-3 text-3xl font-semibold tracking-tight">
           {title}
