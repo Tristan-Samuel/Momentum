@@ -1,14 +1,23 @@
-import { Link, useParams } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getSessionDetail } from '@/database/repository';
+import { Button } from '@/components/Button';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { deleteCompletedSession, getSessionDetail } from '@/database/repository';
 import { formatDuration, formatDateLong } from '@/utils/time';
 import { formatTempo } from '@/utils/tempo';
 
 export function HistoryDetailScreen() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const detail = useLiveQuery(() => (id ? getSessionDetail(id) : Promise.resolve(null)), [id]);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!detail) return <p className="text-[var(--muted)]">Loading…</p>;
   const { session, exercises } = detail;
+
   return (
     <main>
       <Link to="/history" className="text-sm text-[var(--muted)]">
@@ -50,6 +59,31 @@ export function HistoryDetailScreen() {
           </div>
         ))}
       </section>
+      <Button className="mt-12 w-full" variant="danger" onClick={() => setConfirming(true)}>
+        Delete workout
+      </Button>
+      {error ? <p className="mt-3 text-sm text-[var(--muted)]">{error}</p> : null}
+      <ConfirmDialog
+        open={confirming}
+        eyebrow="DELETE WORKOUT"
+        title="Remove this session?"
+        body="It leaves History and Progress. Today’s targets stay as they are — edit them on Program if you need to."
+        confirmLabel="Delete workout"
+        danger
+        busy={busy}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setBusy(true);
+          setError(null);
+          void deleteCompletedSession(session.id)
+            .then(() => navigate('/history'))
+            .catch((err: unknown) => {
+              setBusy(false);
+              setConfirming(false);
+              setError(err instanceof Error ? err.message : 'Could not delete this workout.');
+            });
+        }}
+      />
     </main>
   );
 }

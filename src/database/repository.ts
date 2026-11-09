@@ -22,6 +22,7 @@ import {
   defaultProgression,
   PROGRAM_ID,
 } from '@/database/seed';
+import { weakerLegReps } from '@/progression/algorithm';
 import { createId, midpointTarget, nowIso } from '@/utils/id';
 
 export async function ensureSeeded(): Promise<void> {
@@ -413,6 +414,156 @@ export async function discardWorkoutSession(sessionId: string): Promise<void> {
     engineSnapshot: null,
     updatedAt: nowIso(),
   });
+}
+
+function setReps(set: SetSession): number {
+  if (set.skipped) return 0;
+  if (set.leftReps != null || set.rightReps != null) {
+    return weakerLegReps(set.leftReps, set.rightReps);
+  }
+  return set.completedReps;
+}
+
+export async function recomputeProgressionStats(exerciseId: string): Promise<void> {
+  const progression = await getProgression(exerciseId);
+  if (!progression) return;
+
+  const history = await getExerciseHistory(exerciseId);
+  const stamp = nowIso();
+  let lifetimeReps = 0;
+  let lifetimeSets = 0;
+  let personalBestReps = 0;
+  let personalBestDate: string | null = null;
+  let bestSetSessionId: string | null = null;
+  let bestSetResistance = progression.resistanceLabel;
+  let bestWorkoutReps = 0;
+  let bestWorkoutSessionId: string | null = null;
+  let bestWorkoutResistance = progression.resistanceLabel;
+  let bestWorkoutDate: string | null = null;
+
+  for (const row of history) {
+    const completedSets = row.sets.filter((set) => !set.skipped);
+    const completedReps = completedSets.map(setReps);
+    const workoutReps = completedReps.reduce((sum, value) => sum + value, 0);
+    lifetimeReps += workoutReps;
+    lifetimeSets += completedSets.length;
+    const bestThis = Math.max(0, ...completedReps);
+    const achievedAt = row.session.completedAt ?? row.session.startedAt;
+    if (bestThis > personalBestReps) {
+      personalBestReps = bestThis;
+      personalBestDate = achievedAt;
+      bestSetSessionId = row.session.id;
+      bestSetResistance = row.exercise.configSnapshot.resistanceLabel;
+    }
+    if (workoutReps > bestWorkoutReps) {
+      bestWorkoutReps = workoutReps;
+      bestWorkoutSessionId = row.session.id;
+      bestWorkoutResistance = row.exercise.configSnapshot.resistanceLabel;
+      bestWorkoutDate = achievedAt;
+    }
+  }
+
+  const latest = history.at(-1);
+  const lastCompletedReps = latest ? latest.sets.filter((set) => !set.skipped).map(setReps) : [];
+
+  await db.personalRecords.where('exerciseId').equals(exerciseId).delete();
+  const records: PersonalRecord[] = [];
+  if (personalBestReps > 0 && bestSetSessionId) {
+    records.push({
+      id: createId(),
+      exerciseId,
+      kind: 'best_set_reps',
+      value: personalBestReps,
+      resistanceLabel: bestSetResistance,
+      achievedAt: personalBestDate ?? stamp,
+      workoutSessionId: bestSetSessionId,
+      createdAt: stamp,
+      updatedAt: stamp,
+      syncStatus: 'local',
+    });
+  }
+  if (bestWorkoutReps > 0 && bestWorkoutSessionId) {
+    records.push({
+      id: createId(),
+      exerciseId,
+      kind: 'best_workout_reps',
+      value: bestWorkoutReps,
+      resistanceLabel: bestWorkoutResistance,
+      achievedAt: bestWorkoutDate ?? stamp,
+      workoutSessionId: bestWorkoutSessionId,
+      createdAt: stamp,
+      updatedAt: stamp,
+      syncStatus: 'local',
+    });
+  }
+  if (records.length > 0) {
+    await db.personalRecords.bulkPut(records);
+  }
+
+  await db.progressionStates.put({
+    ...progression,
+    lastCompletedReps,
+    lastRir: latest?.exercise.rir ?? null,
+    lastDifficultyRating: latest?.exercise.difficultyRating ?? null,
+    lastFormQuality: latest?.exercise.formQuality ?? null,
+    personalBestReps,
+    personalBestDate,
+    lastWorkoutDate: latest ? (latest.session.completedAt ?? latest.session.startedAt) : null,
+    lifetimeReps,
+    lifetimeSets,
+    updatedAt: stamp,
+    syncStatus: 'local',
+  });
+}
+
+export async function deleteCompletedSession(sessionId: string): Promise<void> {
+  const session = await db.workoutSessions.get(sessionId);
+  if (!session) return;
+  if (session.status === 'in_progress') {
+    throw new Error('Cannot delete an in-progress workout. Resume or discard it first.');
+  }
+
+  const exercises = await db.exerciseSessions.where('workoutSessionId').equals(sessionId).toArray();
+  const exerciseIds = [...new Set(exercises.map((row) => row.exerciseId))];
+
+  await db.transaction(
+    'rw',
+    [db.workoutSessions, db.exerciseSessions, db.setSessions, db.personalRecords],
+    async () => {
+      await db.setSessions.where('workoutSessionId').equals(sessionId).delete();
+      await db.exerciseSessions.where('workoutSessionId').equals(sessionId).delete();
+      await db.personalRecords.filter((row) => row.workoutSessionId === sessionId).delete();
+      await db.workoutSessions.delete(sessionId);
+    },
+  );
+
+  for (const exerciseId of exerciseIds) {
+    await recomputeProgressionStats(exerciseId);
+  }
+}
+
+export async function resetAllProgress(): Promise<void> {
+  const configs = await db.exerciseConfigurations.toArray();
+  await db.transaction(
+    'rw',
+    [
+      db.workoutSessions,
+      db.exerciseSessions,
+      db.setSessions,
+      db.personalRecords,
+      db.progressionStates,
+    ],
+    async () => {
+      await db.workoutSessions.clear();
+      await db.exerciseSessions.clear();
+      await db.setSessions.clear();
+      await db.personalRecords.clear();
+      await db.progressionStates.clear();
+      if (configs.length > 0) {
+        await db.progressionStates.bulkAdd(configs.map((config) => defaultProgression(config)));
+      }
+    },
+  );
 }
 
 export async function getProgression(exerciseId: string): Promise<ProgressionState | undefined> {

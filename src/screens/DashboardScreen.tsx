@@ -25,6 +25,9 @@ export function DashboardScreen() {
     <main>
       <p className="text-xs tracking-[0.25em] text-[var(--muted)]">{greetingForNow().toUpperCase()}</p>
       <h1 className="mt-3 text-4xl font-semibold tracking-tight">Next workout</h1>
+      <Link to="/guide" className="mt-3 inline-block text-sm text-[var(--muted)]">
+        How it works
+      </Link>
       <section className="mt-8 rounded-3xl border border-[var(--line)] bg-[var(--panel)] p-6">
         <p className="text-xs tracking-[0.22em] text-[var(--muted)]">PROGRAM</p>
         <h2 className="mt-3 text-3xl font-semibold">{prepared.program.name}</h2>

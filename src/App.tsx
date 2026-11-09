@@ -7,6 +7,7 @@ import { DashboardScreen } from '@/screens/DashboardScreen';
 import { HistoryDetailScreen } from '@/screens/HistoryDetailScreen';
 import { HistoryScreen } from '@/screens/HistoryScreen';
 import { ProgressScreen } from '@/screens/ProgressScreen';
+import { GuideScreen } from '@/screens/GuideScreen';
 import { ReviewScreen } from '@/screens/ReviewScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { WorkoutScreen } from '@/screens/WorkoutScreen';
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/progress" element={<ProgressScreen />} />
           <Route path="/configure" element={<ConfigureScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="/guide" element={<GuideScreen />} />
         </Route>
         <Route path="/workout" element={<WorkoutScreen />} />
         <Route path="/review/:id" element={<ReviewScreen />} />

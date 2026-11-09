@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useSettings } from '@/hooks/useSettings';
-import { updateSettings } from '@/database/repository';
+import { Button } from '@/components/Button';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { resetAllProgress, updateSettings } from '@/database/repository';
 import { audioEngine } from '@/audio-engine/engine';
 import { TEST_CUES } from '@/audio-engine/profiles';
 import { haptics } from '@/platform/haptics';
@@ -12,12 +15,18 @@ export function SettingsScreen() {
   const settings = useSettings();
   const [cueStatus, setCueStatus] = useState<string | null>(null);
   const [notifyStatus, setNotifyStatus] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetStatus, setResetStatus] = useState<string | null>(null);
   if (!settings) return <p className="text-[var(--muted)]">Loading…</p>;
 
   return (
     <main>
       <p className="text-xs tracking-[0.25em] text-[var(--muted)]">SETTINGS</p>
       <h1 className="mt-3 text-4xl font-semibold tracking-tight">Preferences</h1>
+      <Link to="/guide" className="mt-4 inline-block text-[var(--muted)]">
+        How it works
+      </Link>
 
       <Field label="Theme">
         <select
@@ -170,6 +179,42 @@ export function SettingsScreen() {
         finish in the background; turn Notifications on if you want a ping when it is time to start
         again.
       </p>
+
+      <section className="mt-12 pb-4">
+        <p className="text-xs tracking-[0.22em] text-[var(--muted)]">DATA</p>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
+          Deletes all workouts, personal records, and lifetime totals. Today’s targets go back to
+          the middle of each range. Your program and preferences stay.
+        </p>
+        <Button className="mt-4 w-full" variant="danger" onClick={() => setConfirmReset(true)}>
+          Reset all progress
+        </Button>
+        {resetStatus ? <p className="mt-3 text-sm text-[var(--muted)]">{resetStatus}</p> : null}
+      </section>
+      <ConfirmDialog
+        open={confirmReset}
+        eyebrow="RESET PROGRESS"
+        title="Start over?"
+        body="This removes every workout from History and Progress. Today’s targets return to the middle of each range. Your program and preferences stay."
+        confirmLabel="Reset all progress"
+        danger
+        busy={resetBusy}
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          setResetBusy(true);
+          void resetAllProgress()
+            .then(() => {
+              setResetBusy(false);
+              setConfirmReset(false);
+              setResetStatus('Progress reset.');
+            })
+            .catch(() => {
+              setResetBusy(false);
+              setConfirmReset(false);
+              setResetStatus('Could not reset progress.');
+            });
+        }}
+      />
     </main>
   );
 }
