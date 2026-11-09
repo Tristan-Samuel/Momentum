@@ -1,69 +1,102 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { Button } from '@/components/Button';
-import * as repo from '@/database/repository';
+import { SetResults } from '@/components/SetResults';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
+import { SectionLabel } from '@/components/ui/SectionLabel';
 import { applyProgressionTargets } from '@/database/repository';
+import { useSessionDetail, useSessionInsights } from '@/hooks/useSessionInsights';
+import { formatRepList, unitSuffix } from '@/utils/prescription';
+import { workingAmount } from '@/utils/stats';
 import { formatDuration } from '@/utils/time';
 
 export function ReviewScreen() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const detail = useLiveQuery(() => (id ? repo.getSessionDetail(id) : Promise.resolve(null)), [id]);
-  const prepared = useLiveQuery(() => repo.getPreparedWorkout(), []);
+  const detail = useSessionDetail(id);
+  const insights = useSessionInsights(detail);
 
-  if (!detail || !prepared) {
+  if (!detail || !insights) {
     return <p className="p-6 text-[var(--muted)]">Loading…</p>;
   }
 
   const { session, exercises } = detail;
   const totalReps = exercises.reduce(
-    (sum, item) => sum + item.sets.filter((set) => !set.skipped).reduce((s, set) => s + set.completedReps, 0),
+    (sum, item) =>
+      (item.exercise.configSnapshot.measure ?? 'reps') === 'reps'
+        ? sum + item.sets.reduce((s, set) => s + workingAmount(set), 0)
+        : sum,
     0,
   );
-  const prs = exercises.flatMap(({ exercise }) => {
-    const state = prepared.exercises.find((item) => item.exerciseId === exercise.exerciseId)?.progression;
-    if (!state?.personalBestDate) return [];
-    if (state.personalBestDate >= session.startedAt) {
-      return [`${exercise.nameSnapshot}: ${state.personalBestReps} reps`];
-    }
-    return [];
-  });
+  const prs = exercises.filter(({ exercise }) => insights.get(exercise.id)?.isPr);
+  const aborted = session.status === 'aborted';
 
   return (
     <main className="mx-auto min-h-dvh max-w-xl px-5 pb-16 pt-[max(1.25rem,env(safe-area-inset-top))]">
-      <p className="text-xs tracking-[0.25em] text-[var(--muted)]">WORKOUT COMPLETE</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-        {formatDuration(session.durationMs)}
-      </h1>
-      <p className="mt-2 text-[var(--muted)]">{session.programNameSnapshot}</p>
+      <div className="animate-fade-up">
+        <p className={`text-xs tracking-[0.25em] ${aborted ? 'text-[var(--warn)]' : 'text-[var(--ok)]'}`}>
+          {aborted ? 'WORKOUT ENDED EARLY' : 'WORKOUT COMPLETE'}
+        </p>
+        <h1 className="mt-3 text-5xl font-semibold tracking-tight">
+          {formatDuration(session.durationMs)}
+        </h1>
+        <p className="mt-2 text-[var(--muted)]">{session.programNameSnapshot}</p>
+      </div>
 
-      <section className="mt-10 space-y-8">
+      <section className="mt-8 grid grid-cols-3 gap-3">
+        <Stat label="Sets" value={String(session.totalSets)} />
+        <Stat label="Reps" value={String(totalReps)} />
+        <Stat label="PRs" value={String(prs.length)} accent={prs.length > 0} />
+      </section>
+
+      {prs.length > 0 ? (
+        <Card tone="accent" className="mt-4 flex items-center gap-4">
+          <Icon name="trophy" size={28} className="shrink-0 text-[var(--accent)]" />
+          <div>
+            <p className="font-medium">New personal record{prs.length > 1 ? 's' : ''}</p>
+            <p className="text-sm text-[var(--muted)]">
+              {prs
+                .map(({ exercise }) => {
+                  const unit = unitSuffix(exercise.configSnapshot.measure);
+                  return `${exercise.nameSnapshot} ${insights.get(exercise.id)?.bestThisSession}${unit}`;
+                })
+                .join(' · ')}
+            </p>
+          </div>
+        </Card>
+      ) : null}
+
+      <section className="mt-8 space-y-4">
         {exercises.map(({ exercise, sets }) => {
-          const progression = prepared.exercises.find((item) => item.exerciseId === exercise.exerciseId)?.progression;
+          const insight = insights.get(exercise.id);
+          const progression = insight?.progression;
+          const measure = exercise.configSnapshot.measure;
           return (
-            <div key={exercise.id}>
-              <h2 className="text-2xl font-semibold">{exercise.nameSnapshot}</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                {exercise.configSnapshot.resistanceLabel}
-              </p>
-              <ul className="mt-3 space-y-1 text-xl tabular-nums">
-                {sets.map((set) => (
-                  <li key={set.id}>
-                    {set.skipped ? 'Skipped' : `${set.completedReps} / ${set.actualTarget}`}
-                  </li>
-                ))}
-              </ul>
+            <Card key={exercise.id} tone="plain">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-2xl font-semibold">{exercise.nameSnapshot}</h2>
+                <span className="text-sm text-[var(--muted)]">
+                  {exercise.configSnapshot.resistanceLabel}
+                </span>
+              </div>
+              <SetResults
+                sets={sets}
+                measure={measure}
+                previous={insight?.previous ?? null}
+                sameResistance={insight?.sameResistance ?? true}
+              />
               {progression?.recommendedResistanceChange?.type === 'increase' ? (
-                <div className="mt-4 rounded-2xl border border-[var(--line)] p-4">
-                  <p className="text-sm tracking-[0.16em] text-[var(--muted)]">PROGRESSION</p>
+                <div className="mt-4 rounded-2xl bg-[var(--accent-soft)] p-4">
+                  <SectionLabel>Level up</SectionLabel>
                   <p className="mt-2">
                     You topped the range. Make the movement harder (more weight, a tougher
-                    variation), then the next targets reset toward the bottom of the range.
+                    variation), then the targets reset toward the bottom of the range.
                   </p>
-                  <p className="mt-1 text-[var(--muted)]">
-                    After you apply: {progression.recommendedNextTargets.join(', ')} reps
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    After you apply: {formatRepList(progression.recommendedNextTargets, measure)}
                   </p>
                   <Button
+                    variant="accent"
                     className="mt-4 w-full"
                     onClick={() =>
                       void applyProgressionTargets({
@@ -77,44 +110,31 @@ export function ReviewScreen() {
                   </Button>
                 </div>
               ) : progression ? (
-                <p className="mt-3 text-[var(--muted)]">
-                  Next session: {progression.currentTargets.join(', ')} reps. Hit a set&apos;s
-                  target and the app adds 1 next time, up to {exercise.configSnapshot.maxReps}.
+                <p className="mt-3 text-sm text-[var(--muted)]">
+                  Next session: {formatRepList(progression.currentTargets, measure)}. Hit a set&apos;s
+                  target and it goes up by {exercise.configSnapshot.progressionStep ?? 1}
+                  {unitSuffix(measure)} next time, up to {exercise.configSnapshot.maxReps}
+                  {unitSuffix(measure)}.
                 </p>
               ) : null}
-            </div>
+            </Card>
           );
         })}
       </section>
 
-      <section className="mt-10 grid grid-cols-2 gap-6">
-        <div>
-          <p className="text-xs tracking-[0.18em] text-[var(--muted)]">TOTAL SETS</p>
-          <p className="mt-2 text-3xl">{session.totalSets}</p>
-        </div>
-        <div>
-          <p className="text-xs tracking-[0.18em] text-[var(--muted)]">TOTAL REPS</p>
-          <p className="mt-2 text-3xl">{totalReps}</p>
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <p className="text-xs tracking-[0.18em] text-[var(--muted)]">PERSONAL RECORDS</p>
-        {prs.length > 0 ? (
-          <ul className="mt-3 space-y-1">
-            {prs.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-[var(--muted)]">None this session</p>
-        )}
-      </section>
-
-      <Button className="mt-12 w-full" onClick={() => navigate('/', { replace: true })}>
+      <Button className="mt-10 w-full" onClick={() => navigate('/', { replace: true })}>
         Done
       </Button>
     </main>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-[var(--line)] p-4">
+      <p className="text-xs tracking-[0.18em] text-[var(--muted)]">{label.toUpperCase()}</p>
+      <p className={`mt-2 text-3xl tabular-nums ${accent ? 'text-[var(--accent)]' : ''}`}>{value}</p>
+    </div>
   );
 }
 

@@ -25,11 +25,24 @@ export function LineChart({ points, ariaLabel }: Props) {
   const d = points
     .map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.x)} ${sy(p.y)}`)
     .join(' ');
+  const area = `${d} L ${sx(points[points.length - 1].x)} ${height - pad} L ${sx(points[0].x)} ${height - pad} Z`;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={ariaLabel}>
-      <path d={d} fill="none" stroke="var(--fg)" strokeWidth="2.5" />
-      {points.map((p) => (
-        <circle key={`${p.x}-${p.y}`} cx={sx(p.x)} cy={sy(p.y)} r="3.5" fill="var(--fg)" />
+      <line x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} stroke="var(--line)" />
+      <path d={area} fill="var(--accent)" opacity="0.1" />
+      <path d={d} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
+      {points.map((p, index) => (
+        <circle
+          key={`${p.x}-${p.y}`}
+          cx={sx(p.x)}
+          cy={sy(p.y)}
+          r={index === points.length - 1 ? 4.5 : 3}
+          fill={index === points.length - 1 ? 'var(--accent)' : 'var(--panel)'}
+          stroke="var(--accent)"
+          strokeWidth="2"
+        >
+          {p.label ? <title>{`${p.label}: ${p.y}`}</title> : null}
+        </circle>
       ))}
     </svg>
   );
