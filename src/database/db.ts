@@ -12,6 +12,7 @@ import type {
   WorkoutProgram,
   WorkoutSession,
 } from '@/types';
+import { installOutboxHooks } from '@/sync/outbox';
 
 export class MomentumDB extends Dexie {
   workoutPrograms!: EntityTable<WorkoutProgram, 'id'>;
@@ -70,3 +71,4 @@ export class MomentumDB extends Dexie {
 }
 
 export const db = new MomentumDB();
+installOutboxHooks(db);

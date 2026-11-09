@@ -24,6 +24,7 @@ import {
   PROGRAM_ID,
 } from '@/database/seed';
 import { weakerLegReps } from '@/progression/algorithm';
+import { queueDeletes } from '@/sync/outbox';
 import { createId, midpointTarget, nowIso } from '@/utils/id';
 
 export async function ensureSeeded(): Promise<void> {
@@ -666,6 +667,16 @@ export async function deleteCompletedSession(sessionId: string): Promise<void> {
 
 export async function resetAllProgress(): Promise<void> {
   const configs = await db.exerciseConfigurations.toArray();
+  const cleared = [
+    ['workoutSessions', db.workoutSessions],
+    ['exerciseSessions', db.exerciseSessions],
+    ['setSessions', db.setSessions],
+    ['personalRecords', db.personalRecords],
+    ['progressionStates', db.progressionStates],
+  ] as const;
+  for (const [name, table] of cleared) {
+    await queueDeletes(db, name, (await table.toCollection().primaryKeys()) as string[]);
+  }
   await db.transaction(
     'rw',
     [
@@ -791,6 +802,21 @@ export async function completedWorkoutCount(): Promise<number> {
 
 function countsAsWorkout(row: WorkoutSession): boolean {
   return row.status === 'completed' || (row.status === 'aborted' && row.totalSets > 0);
+}
+
+export async function listRepVolumes(): Promise<Array<{ startedAt: string; amount: number }>> {
+  const sessions = (await db.workoutSessions.toArray()).filter(countsAsWorkout);
+  const ids = new Set(sessions.map((row) => row.id));
+  const exercises = (await db.exerciseSessions.toArray()).filter(
+    (row) => ids.has(row.workoutSessionId) && (row.configSnapshot.measure ?? 'reps') === 'reps',
+  );
+  const repExerciseIds = new Set(exercises.map((row) => row.id));
+  const totals = new Map<string, number>();
+  for (const set of await db.setSessions.toArray()) {
+    if (!repExerciseIds.has(set.exerciseSessionId) || set.skipped) continue;
+    totals.set(set.workoutSessionId, (totals.get(set.workoutSessionId) ?? 0) + setReps(set));
+  }
+  return sessions.map((row) => ({ startedAt: row.startedAt, amount: totals.get(row.id) ?? 0 }));
 }
 
 export async function listWorkoutDates(): Promise<string[]> {
