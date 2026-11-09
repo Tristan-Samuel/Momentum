@@ -10,6 +10,7 @@ export type Tempo = {
 export type TempoPhase = 'eccentric' | 'bottomPause' | 'concentric' | 'topPause';
 
 export type Laterality = 'bilateral' | 'unilateral';
+export type Measure = 'reps' | 'seconds';
 export type UnilateralOrder = 'right-then-left' | 'left-then-right' | 'alternating';
 export type ProgressionType = 'rep-range';
 export type DifficultyRating = 'too_easy' | 'good' | 'hard' | 'too_hard';
@@ -23,6 +24,7 @@ export type PersonalRecordKind = 'best_set_reps' | 'best_workout_reps';
 export type WorkoutProgram = {
   id: string;
   name: string;
+  order: number;
   createdAt: string;
   updatedAt: string;
   syncStatus: SyncStatus;
@@ -50,6 +52,8 @@ export type ExerciseConfiguration = {
   targetRirMin: number;
   targetRirMax: number;
   progressionType: ProgressionType;
+  measure: Measure;
+  progressionStep: number;
   laterality: Laterality;
   unilateralOrder: UnilateralOrder;
   resistanceLabel: string;
@@ -112,6 +116,8 @@ export type ExerciseConfigSnapshot = {
   targetRirMin: number;
   targetRirMax: number;
   progressionType: ProgressionType;
+  measure?: Measure;
+  progressionStep?: number;
   laterality: Laterality;
   unilateralOrder: UnilateralOrder;
   resistanceLabel: string;
@@ -181,6 +187,7 @@ export type AppSettings = {
   largeText: boolean;
   highContrast: boolean;
   keepAwake: boolean;
+  weeklyGoal: number;
   defaultTransitionSeconds: number;
   defaultUnilateralOrder: UnilateralOrder;
   createdAt: string;
@@ -196,4 +203,36 @@ export type ProgramExercise = ExerciseConfiguration & {
 export type PreparedWorkout = {
   program: WorkoutProgram;
   exercises: ProgramExercise[];
+};
+
+export const SYNC_TABLES = [
+  'workoutPrograms',
+  'exercises',
+  'exerciseConfigurations',
+  'progressionStates',
+  'workoutSessions',
+  'exerciseSessions',
+  'setSessions',
+  'personalRecords',
+  'appSettings',
+] as const;
+
+export type SyncTable = (typeof SYNC_TABLES)[number];
+
+export type OutboxEntry = {
+  key: string;
+  table: SyncTable;
+  recordId: string;
+  op: 'put' | 'delete';
+  queuedAt: string;
+};
+
+export type SyncAccount = {
+  id: 'account';
+  token: string | null;
+  email: string;
+  name: string;
+  lastPushAt: string | null;
+  lastError: string | null;
+  initialSyncDone: boolean;
 };

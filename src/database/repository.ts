@@ -5,6 +5,7 @@ import type {
   ExerciseConfiguration,
   ExerciseSession,
   FormQuality,
+  Measure,
   PersonalRecord,
   PreparedWorkout,
   ProgramExercise,
@@ -180,6 +181,8 @@ export async function addExerciseToProgram(
     laterality: ExerciseConfiguration['laterality'];
     unilateralOrder: ExerciseConfiguration['unilateralOrder'];
     resistanceLabel: string;
+    measure?: Measure;
+    progressionStep?: number;
   },
 ): Promise<void> {
   const stamp = nowIso();
@@ -206,6 +209,8 @@ export async function addExerciseToProgram(
     targetRirMin: input.targetRirMin,
     targetRirMax: input.targetRirMax,
     progressionType: 'rep-range',
+    measure: input.measure ?? 'reps',
+    progressionStep: input.progressionStep ?? (input.measure === 'seconds' ? 5 : 1),
     laterality: input.laterality,
     unilateralOrder: input.unilateralOrder,
     resistanceLabel: input.resistanceLabel,

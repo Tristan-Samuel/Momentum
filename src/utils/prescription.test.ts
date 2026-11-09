@@ -22,6 +22,8 @@ function exercise(partial: Partial<ProgramExercise> & Pick<ProgramExercise, 'set
     targetRirMin: 1,
     targetRirMax: 2,
     progressionType: 'rep-range',
+    measure: 'reps',
+    progressionStep: 1,
     unilateralOrder: 'right-then-left',
     resistanceLabel: 'Bodyweight',
     createdAt: stamp,

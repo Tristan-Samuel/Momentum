@@ -31,6 +31,8 @@ function prepared(): PreparedWorkout {
     targetRirMin: 1,
     targetRirMax: 2,
     progressionType: 'rep-range' as const,
+    measure: 'reps' as const,
+    progressionStep: 1,
     laterality,
     unilateralOrder: 'right-then-left' as const,
     resistanceLabel: 'Bodyweight',
@@ -64,6 +66,7 @@ function prepared(): PreparedWorkout {
     program: {
       id: 'p1',
       name: 'Minimalist Strength',
+      order: 0,
       createdAt: stamp,
       updatedAt: stamp,
       syncStatus: 'local',
