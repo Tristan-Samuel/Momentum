@@ -12,6 +12,7 @@ import {
 import { PerformanceClock } from '@/timing-engine/clock';
 import { WorkoutEngine } from '@/workout-engine/engine';
 import { persistEngineEvents } from '@/workout-engine/persist';
+import { measureNoun } from '@/utils/prescription';
 import { parseSnapshot, type WorkoutView } from '@/workout-engine/types';
 import type { DifficultyRating, FormQuality, PreparedWorkout } from '@/types';
 
@@ -33,7 +34,7 @@ export type WorkoutControls = {
   }) => void;
 };
 
-export function useWorkoutRunner(resumeSessionId?: string | null) {
+export function useWorkoutRunner(resumeSessionId?: string | null, programId?: string | null) {
   const navigate = useNavigate();
   const engineRef = useRef<WorkoutEngine | null>(null);
   const [view, setView] = useState<WorkoutView | null>(null);
@@ -67,7 +68,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
       void scheduleRestCompleteAlert({
         enabled: notificationsEnabled,
         title: 'Momentum',
-        body: `${label} ${next.nextExerciseName ?? next.exerciseName} · ${next.nextTarget} reps`,
+        body: `${label} ${next.nextExerciseName ?? next.exerciseName} · ${next.nextTarget} ${measureNoun(next.measure)}`,
         inSeconds: next.restRemaining,
       });
     };
@@ -106,7 +107,10 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
         await audioEngine.unlock();
         await wakeLock.request();
 
-        const prepared: PreparedWorkout = await repo.getPreparedWorkout();
+        const resumeSession = resumeSessionId ? await repo.getSession(resumeSessionId) : undefined;
+        const prepared: PreparedWorkout = await repo.getPreparedWorkout(
+          resumeSession?.programId ?? programId ?? undefined,
+        );
         const engine = new WorkoutEngine({
           clock,
           audio: audioEngine,
@@ -116,7 +120,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
         setControls(bindControls(engine));
 
         if (resumeSessionId) {
-          const session = await repo.getSession(resumeSessionId);
+          const session = resumeSession;
           if (!session) {
             throw new Error('Nothing to resume');
           }
@@ -194,7 +198,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null) {
       void cancelRestCompleteAlert();
       void wakeLock.release();
     };
-  }, [navigate, resumeSessionId]);
+  }, [navigate, resumeSessionId, programId]);
 
   return { view, error, controls };
 }

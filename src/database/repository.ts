@@ -77,15 +77,28 @@ export async function updateSettings(
   return next;
 }
 
-export async function getPrimaryProgram(): Promise<WorkoutProgram> {
+export async function listPrograms(): Promise<WorkoutProgram[]> {
   await ensureSeeded();
-  const program =
-    (await db.workoutPrograms.get(PROGRAM_ID)) ??
-    (await db.workoutPrograms.orderBy('createdAt').first());
+  const rows = await db.workoutPrograms.toArray();
+  return rows.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function getPrimaryProgram(): Promise<WorkoutProgram> {
+  const programs = await listPrograms();
+  const program = programs.find((row) => row.id === PROGRAM_ID) ?? programs[0];
   if (!program) {
     throw new Error('No workout program found');
   }
   return program;
+}
+
+export async function nextProgramInRotation(): Promise<WorkoutProgram> {
+  const programs = await listPrograms();
+  if (programs.length === 0) throw new Error('No workout program found');
+  const last = await lastCompletedSession();
+  const index = last ? programs.findIndex((row) => row.id === last.programId) : -1;
+  if (index < 0) return programs[0];
+  return programs[(index + 1) % programs.length];
 }
 
 export async function getPreparedWorkout(
@@ -93,8 +106,8 @@ export async function getPreparedWorkout(
 ): Promise<PreparedWorkout> {
   await ensureSeeded();
   const program = programId
-    ? await db.workoutPrograms.get(programId)
-    : await getPrimaryProgram();
+    ? (await db.workoutPrograms.get(programId)) ?? (await nextProgramInRotation())
+    : await nextProgramInRotation();
   if (!program) {
     throw new Error('Program not found');
   }
@@ -119,8 +132,97 @@ export async function getPreparedWorkout(
   return { program, exercises };
 }
 
+export async function listPreparedPrograms(): Promise<PreparedWorkout[]> {
+  const programs = await listPrograms();
+  return Promise.all(programs.map((program) => getPreparedWorkout(program.id)));
+}
+
 export async function updateProgramName(id: string, name: string): Promise<void> {
   await db.workoutPrograms.update(id, { name, updatedAt: nowIso() });
+}
+
+export async function createProgram(name: string): Promise<WorkoutProgram> {
+  const programs = await listPrograms();
+  const stamp = nowIso();
+  const program: WorkoutProgram = {
+    id: createId(),
+    name: name.trim() || 'New program',
+    order: programs.length,
+    createdAt: stamp,
+    updatedAt: stamp,
+    syncStatus: 'local',
+  };
+  await db.workoutPrograms.add(program);
+  return program;
+}
+
+export async function duplicateProgram(programId: string): Promise<WorkoutProgram | null> {
+  const source = await getPreparedWorkout(programId);
+  if (source.program.id !== programId) return null;
+  const copy = await createProgram(`${source.program.name} copy`);
+  const stamp = nowIso();
+  await db.transaction(
+    'rw',
+    [db.exercises, db.exerciseConfigurations, db.progressionStates],
+    async () => {
+      for (const item of source.exercises) {
+        const exercise: Exercise = {
+          id: createId(),
+          name: item.exercise.name,
+          createdAt: stamp,
+          updatedAt: stamp,
+          syncStatus: 'local',
+        };
+        const { exercise: _exercise, progression, ...config } = item;
+        void _exercise;
+        const nextConfig: ExerciseConfiguration = {
+          ...config,
+          id: createId(),
+          programId: copy.id,
+          exerciseId: exercise.id,
+          createdAt: stamp,
+          updatedAt: stamp,
+          syncStatus: 'local',
+        };
+        await db.exercises.add(exercise);
+        await db.exerciseConfigurations.add(nextConfig);
+        await db.progressionStates.add({
+          ...defaultProgression(nextConfig),
+          resistanceLabel: progression.resistanceLabel,
+          currentTargets: progression.currentTargets.slice(),
+          recommendedNextTargets: progression.currentTargets.slice(),
+          createdAt: stamp,
+          updatedAt: stamp,
+        });
+      }
+    },
+  );
+  return copy;
+}
+
+export async function deleteProgram(programId: string): Promise<void> {
+  const programs = await listPrograms();
+  if (programs.length <= 1) {
+    throw new Error('Keep at least one program.');
+  }
+  await db.transaction('rw', [db.workoutPrograms, db.exerciseConfigurations], async () => {
+    await db.exerciseConfigurations.where('programId').equals(programId).delete();
+    await db.workoutPrograms.delete(programId);
+  });
+  const remaining = programs.filter((row) => row.id !== programId);
+  await reorderPrograms(remaining.map((row) => row.id));
+}
+
+export async function reorderPrograms(programIds: string[]): Promise<void> {
+  const stamp = nowIso();
+  await db.transaction('rw', db.workoutPrograms, async () => {
+    for (const [index, id] of programIds.entries()) {
+      const row = await db.workoutPrograms.get(id);
+      if (row && row.order !== index) {
+        await db.workoutPrograms.update(id, { order: index, updatedAt: stamp });
+      }
+    }
+  });
 }
 
 export async function updateExerciseName(id: string, name: string): Promise<void> {
@@ -244,13 +346,28 @@ export async function removeExerciseFromProgram(configId: string): Promise<void>
   );
 }
 
-export async function reorderExercises(programId: string, configIds: string[]): Promise<void> {
-  await Promise.all(
-    configIds.map((id, index) =>
-      db.exerciseConfigurations.update(id, { order: index, updatedAt: nowIso() }),
-    ),
-  );
-  void programId;
+export async function reorderExercises(configIds: string[]): Promise<void> {
+  const stamp = nowIso();
+  await db.transaction('rw', db.exerciseConfigurations, async () => {
+    for (const [index, id] of configIds.entries()) {
+      await db.exerciseConfigurations.update(id, { order: index, updatedAt: stamp });
+    }
+  });
+}
+
+export async function moveExercise(configId: string, direction: -1 | 1): Promise<void> {
+  const config = await db.exerciseConfigurations.get(configId);
+  if (!config) return;
+  const siblings = await db.exerciseConfigurations
+    .where('programId')
+    .equals(config.programId)
+    .sortBy('order');
+  const index = siblings.findIndex((row) => row.id === configId);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= siblings.length) return;
+  const ids = siblings.map((row) => row.id);
+  [ids[index], ids[target]] = [ids[target], ids[index]];
+  await reorderExercises(ids);
 }
 
 export async function createWorkoutSession(prepared: PreparedWorkout): Promise<WorkoutSession> {
@@ -670,6 +787,15 @@ export async function lastCompletedSession(): Promise<WorkoutSession | undefined
 export async function completedWorkoutCount(): Promise<number> {
   const rows = await db.workoutSessions.toArray();
   return rows.filter((row) => row.status === 'completed').length;
+}
+
+function countsAsWorkout(row: WorkoutSession): boolean {
+  return row.status === 'completed' || (row.status === 'aborted' && row.totalSets > 0);
+}
+
+export async function listWorkoutDates(): Promise<string[]> {
+  const rows = await db.workoutSessions.toArray();
+  return rows.filter(countsAsWorkout).map((row) => row.startedAt);
 }
 
 export { db };

@@ -1,6 +1,7 @@
 import type {
   DifficultyRating,
   FormQuality,
+  Measure,
   Side,
   TempoPhase,
 } from '@/types';
@@ -84,6 +85,9 @@ export type WorkoutView = {
   maxReps: number;
   targetRirMin: number;
   targetRirMax: number;
+  measure: Measure;
+  holdRemaining: number;
+  switchingSides: boolean;
 };
 
 export function parseSnapshot(json: string): EngineSnapshotV1 | null {

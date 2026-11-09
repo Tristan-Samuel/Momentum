@@ -150,6 +150,98 @@ export function buildRestCues(startAt: number, duration: number): ScheduledCue[]
   return cues;
 }
 
+export const HOLD_SWITCH_SECONDS = 3;
+
+export function holdSides(laterality: Laterality, order: UnilateralOrder): Array<Side | undefined> {
+  if (laterality === 'bilateral') return [undefined];
+  const first: Side = order === 'left-then-right' ? 'left' : 'right';
+  return [first, first === 'right' ? 'left' : 'right'];
+}
+
+export function holdDurationSeconds(target: number, sides: Array<Side | undefined>): number {
+  const count = sides.length;
+  return count * Math.max(0, target) + Math.max(0, count - 1) * HOLD_SWITCH_SECONDS;
+}
+
+export type HoldProgress = {
+  sideIndex: number;
+  side: Side | undefined;
+  secondsIntoSide: number;
+  switching: boolean;
+  switchRemaining: number;
+  complete: boolean;
+};
+
+export function holdProgressAt(
+  elapsedSeconds: number,
+  target: number,
+  sides: Array<Side | undefined>,
+): HoldProgress {
+  const total = holdDurationSeconds(target, sides);
+  if (sides.length === 0 || target <= 0 || elapsedSeconds >= total) {
+    return {
+      sideIndex: Math.max(0, sides.length - 1),
+      side: sides[sides.length - 1],
+      secondsIntoSide: Math.max(0, target),
+      switching: false,
+      switchRemaining: 0,
+      complete: true,
+    };
+  }
+  const per = target + HOLD_SWITCH_SECONDS;
+  const elapsed = Math.max(0, elapsedSeconds);
+  const sideIndex = Math.min(sides.length - 1, Math.floor(elapsed / per));
+  const within = elapsed - sideIndex * per;
+  if (within < target) {
+    return {
+      sideIndex,
+      side: sides[sideIndex],
+      secondsIntoSide: within,
+      switching: false,
+      switchRemaining: 0,
+      complete: false,
+    };
+  }
+  return {
+    sideIndex: sideIndex + 1,
+    side: sides[sideIndex + 1],
+    secondsIntoSide: 0,
+    switching: true,
+    switchRemaining: per - within,
+    complete: false,
+  };
+}
+
+export function buildHoldCues(
+  target: number,
+  sides: Array<Side | undefined>,
+  startAt: number,
+): ScheduledCue[] {
+  const cues: ScheduledCue[] = [];
+  let t = startAt;
+  sides.forEach((side, index) => {
+    for (let second = 1; second < target; second++) {
+      const left = target - second;
+      cues.push(
+        left <= 3
+          ? { at: t + second, kind: 'rest_countdown', count: left, side }
+          : { at: t + second, kind: 'tick', side },
+      );
+    }
+    const end = t + target;
+    if (index === sides.length - 1) {
+      cues.push({ at: end, kind: 'set_complete' });
+      return;
+    }
+    cues.push({ at: end, kind: 'phase_beep', side });
+    cues.push({ at: end + 1, kind: 'countdown', count: 2 });
+    cues.push({ at: end + 2, kind: 'countdown', count: 1 });
+    cues.push({ at: end + HOLD_SWITCH_SECONDS, kind: 'start', side: sides[index + 1] });
+    t = end + HOLD_SWITCH_SECONDS;
+  });
+  return cues;
+}
+
 export function setDurationSeconds(tempo: Tempo, plan: RepSlot[]): number {
   return plan.length * tempoSeconds(tempo);
 }

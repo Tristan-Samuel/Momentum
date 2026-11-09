@@ -15,9 +15,13 @@ import {
 } from '@/platform/background';
 import {
   buildCountdownCues,
+  buildHoldCues,
   buildRepPlan,
   buildRestCues,
   buildSetCues,
+  holdDurationSeconds,
+  holdProgressAt,
+  holdSides,
   progressAt,
   SET_START_DELAY,
   type CueKind,
@@ -323,11 +327,23 @@ export class WorkoutEngine {
     let restRemaining = 0;
     let approaching = false;
     let setCompleteReps = target;
+    let holdRemaining = 0;
+    let switchingSides = false;
 
     if (kind === 'pre_set_countdown') {
       countdown = Math.max(1, Math.ceil(this.segmentDuration - elapsed));
     }
-    if (kind === 'set_active') {
+    if (kind === 'set_active' && isHold(item)) {
+      const progress = holdProgressAt(
+        Math.max(0, elapsed - SET_START_DELAY),
+        target,
+        holdSides(item.laterality, item.unilateralOrder),
+      );
+      currentRep = Math.min(target, Math.floor(progress.secondsIntoSide));
+      side = progress.side;
+      switchingSides = progress.switching;
+      holdRemaining = progress.switching ? progress.switchRemaining : target - progress.secondsIntoSide;
+    } else if (kind === 'set_active') {
       const progress = progressAt(Math.max(0, elapsed - SET_START_DELAY), item.tempo, plan);
       if (progress.slot) {
         currentRep = progress.slot.repOnSide;
@@ -395,6 +411,9 @@ export class WorkoutEngine {
       maxReps: item.maxReps,
       targetRirMin: item.targetRirMin,
       targetRirMax: item.targetRirMax,
+      measure: item.measure ?? 'reps',
+      holdRemaining,
+      switchingSides,
     };
   }
 
@@ -413,7 +432,8 @@ export class WorkoutEngine {
     const item = this.currentItem();
     if (!item) return;
     const current = this.currentTarget();
-    const next = Math.max(1, current + delta);
+    const step = isHold(item) ? Math.max(1, item.progressionStep || 5) : 1;
+    const next = Math.max(1, current + delta * step);
     this.actualTargets[this.exerciseIndex][this.setIndex] = next;
     if (this.kind === 'set_active' || (this.kind === 'paused' && this.pausedKind === 'set_active')) {
       this.rebuildActiveSet(this.clock());
@@ -425,8 +445,7 @@ export class WorkoutEngine {
     const item = this.currentItem();
     if (!item) return;
     const elapsed = this.kind === 'paused' ? this.elapsedAtPause : now - this.segmentStartedAt;
-    const plan = this.planFor(item, this.currentTarget());
-    const duration = SET_START_DELAY + plan.length * tempoSeconds(item.tempo);
+    const duration = this.activeDuration(item, this.currentTarget());
     this.segmentDuration = duration;
     if (this.kind === 'paused') {
       this.elapsedAtPause = Math.min(elapsed, duration);
@@ -539,6 +558,12 @@ export class WorkoutEngine {
     if (this.kind === 'pre_set_countdown') {
       return buildCountdownCues(start).cues.filter((cue) => cue.at >= now - 0.01);
     }
+    if (this.kind === 'set_active' && item && isHold(item)) {
+      const sides = holdSides(item.laterality, item.unilateralOrder);
+      return buildHoldCues(this.currentTarget(), sides, start + SET_START_DELAY).filter(
+        (cue) => cue.at >= now - 0.01,
+      );
+    }
     if (this.kind === 'set_active' && item) {
       const plan = this.planFor(item, this.currentTarget());
       const { cues } = buildSetCues(item.tempo, plan, start + SET_START_DELAY);
@@ -556,8 +581,14 @@ export class WorkoutEngine {
   private setDuration(): number {
     const item = this.currentItem();
     if (!item) return SET_START_DELAY;
-    const plan = this.planFor(item, this.currentTarget());
-    return SET_START_DELAY + plan.length * tempoSeconds(item.tempo);
+    return this.activeDuration(item, this.currentTarget());
+  }
+
+  private activeDuration(item: ProgramExercise, target: number): number {
+    if (isHold(item)) {
+      return SET_START_DELAY + holdDurationSeconds(target, holdSides(item.laterality, item.unilateralOrder));
+    }
+    return SET_START_DELAY + this.planFor(item, target).length * tempoSeconds(item.tempo);
   }
 
   private planFor(item: ProgramExercise, target: number): RepSlot[] {
@@ -626,6 +657,12 @@ export class WorkoutEngine {
     let rightReps: number | null = item.laterality === 'unilateral' ? 0 : null;
     if (input.skipped) {
       completedReps = 0;
+    } else if (input.completedFromElapsed && isHold(item)) {
+      completedReps = actual;
+      if (item.laterality === 'unilateral') {
+        leftReps = actual;
+        rightReps = actual;
+      }
     } else if (input.completedFromElapsed) {
       if (item.laterality === 'unilateral') {
         leftReps = plan.filter((slot) => slot.side === 'left').length;
@@ -677,6 +714,8 @@ export class WorkoutEngine {
       targetRirMin: item.targetRirMin,
       targetRirMax: item.targetRirMax,
       progressionType: item.progressionType,
+      measure: item.measure ?? 'reps',
+      progressionStep: item.progressionStep ?? 1,
       laterality: item.laterality,
       unilateralOrder: item.unilateralOrder,
       resistanceLabel: item.progression.resistanceLabel,
@@ -768,7 +807,14 @@ function emptyView(engine: WorkoutEngine): WorkoutView {
     maxReps: 0,
     targetRirMin: 0,
     targetRirMax: 0,
+    measure: 'reps',
+    holdRemaining: 0,
+    switchingSides: false,
   };
+}
+
+function isHold(item: ProgramExercise): boolean {
+  return item.measure === 'seconds';
 }
 
 export function cueHaptic(kind: CueKind): 'tick' | 'start' | 'warning' | 'complete' | 'countdown' | null {

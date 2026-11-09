@@ -18,6 +18,7 @@ export type ProgressionInput = {
   formQuality: FormQuality | null;
   targetReduced: boolean;
   resistanceLabel: string;
+  step?: number;
 };
 
 export type ProgressionResult = {
@@ -26,15 +27,15 @@ export type ProgressionResult = {
   holdReason: string | null;
 };
 
-function resetTargets(sets: number, minReps: number, maxReps: number): number[] {
-  const value = Math.min(maxReps, minReps + 1);
+function resetTargets(sets: number, minReps: number, maxReps: number, step: number): number[] {
+  const value = Math.min(maxReps, minReps + step);
   return Array.from({ length: sets }, () => value);
 }
 
-function significantDrop(current: number[], previous: number[]): boolean {
+function significantDrop(current: number[], previous: number[], step: number): boolean {
   if (previous.length === 0 || current.length === 0) return false;
   for (let i = 0; i < Math.min(current.length, previous.length); i++) {
-    if (previous[i] - current[i] >= 2) return true;
+    if (previous[i] - current[i] >= 2 * step) return true;
   }
   const currentTotal = current.reduce((sum, value) => sum + value, 0);
   const previousTotal = previous.reduce((sum, value) => sum + value, 0);
@@ -58,6 +59,7 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
     targetReduced,
     resistanceLabel,
   } = input;
+  const step = Math.max(1, input.step ?? 1);
 
   const targets = Array.from({ length: sets }, (_, i) => currentTargets[i] ?? minReps);
   const completed = Array.from({ length: sets }, (_, i) => completedReps[i] ?? 0);
@@ -67,7 +69,7 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
     rir === 0 && targetRirMin >= 1 && targetRirMax >= 1;
   const tooHard = rating === 'too_hard';
   const poorForm = formQuality === 'poor';
-  const dropped = significantDrop(completed, previousCompletedReps);
+  const dropped = significantDrop(completed, previousCompletedReps, step);
 
   if (tooHard || rirTooLow || poorForm || failedMin || targetReduced || dropped) {
     const reason = tooHard
@@ -98,7 +100,7 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
 
   if (allAtMax && effortOk && rirInRange) {
     return {
-      nextTargets: resetTargets(sets, minReps, maxReps),
+      nextTargets: resetTargets(sets, minReps, maxReps, step),
       recommendation: {
         type: 'increase',
         suggestion: 'Increase difficulty, then reset toward the bottom of the range',
@@ -109,7 +111,7 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
 
   const nextTargets = targets.map((target, index) => {
     if (completed[index] >= target) {
-      return Math.min(maxReps, target + 1);
+      return Math.min(maxReps, target + step);
     }
     return target;
   });

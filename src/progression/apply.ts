@@ -42,6 +42,7 @@ export async function applyCompletedSessionProgression(sessionId: string): Promi
       formQuality: exercise.formQuality,
       targetReduced,
       resistanceLabel: progression.resistanceLabel,
+      step: exercise.configSnapshot.progressionStep ?? 1,
     });
 
     const bestThisWorkout = Math.max(0, ...completedReps);

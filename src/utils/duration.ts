@@ -1,4 +1,5 @@
 import type { ProgramExercise } from '@/types';
+import { holdDurationSeconds, holdSides } from '@/timing-engine/cues';
 import { tempoSeconds } from '@/utils/tempo';
 
 const COUNTDOWN_SECONDS = 3;
@@ -14,7 +15,10 @@ export function estimateWorkoutSeconds(exercises: ProgramExercise[]): number {
     for (let set = 0; set < item.sets; set++) {
       const reps = targets[set] ?? targets[0] ?? item.minReps;
       total += COUNTDOWN_SECONDS + SET_COMPLETE_SECONDS;
-      total += reps * perRep * lateralityMul;
+      total +=
+        item.measure === 'seconds'
+          ? holdDurationSeconds(reps, holdSides(item.laterality, item.unilateralOrder))
+          : reps * perRep * lateralityMul;
       if (set < item.sets - 1) {
         total += item.restAfterSetSeconds;
       }
