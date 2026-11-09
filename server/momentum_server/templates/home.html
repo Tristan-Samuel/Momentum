@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="eyebrow">SYNC</p>
+<h1>Your training, backed up.</h1>
+<p class="muted lead">
+  The Momentum app uploads your programs and workouts here after each change. Sign in with your
+  tssamuel.com account to see them.
+</p>
+<a class="button" href="{{ url_for('login') }}">Sign in</a>
+{% endblock %}

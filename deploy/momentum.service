@@ -1,0 +1,19 @@
+[Unit]
+Description=Momentum sync and admin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOURUSER
+Group=YOURUSER
+WorkingDirectory=/home/YOURUSER/apps/momentum/server
+EnvironmentFile=/etc/momentum.env
+ExecStart=/home/YOURUSER/apps/momentum/.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

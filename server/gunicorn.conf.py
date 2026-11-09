@@ -1,0 +1,9 @@
+bind = "127.0.0.1:5141"
+workers = 1
+threads = 4
+timeout = 60
+graceful_timeout = 20
+keepalive = 5
+accesslog = "-"
+errorlog = "-"
+loglevel = "info"

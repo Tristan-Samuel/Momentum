@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Momentum · {{ user.email }}{% endblock %}
+{% block content %}
+<p class="eyebrow">{% if current_user.id == user.id %}MY TRAINING{% else %}USER{% endif %}</p>
+<h1>{{ user.name or user.email }}</h1>
+<p class="muted">{{ user.email }} · last sync {{ user.last_sync_at|when }}</p>
+
+<section class="stats">
+  <div class="card"><p class="muted small">Workouts</p><p class="big">{{ summary.workouts }}</p></div>
+  <div class="card"><p class="muted small">Total reps</p><p class="big">{{ summary.total_reps }}</p></div>
+  <div class="card"><p class="muted small">Time in holds</p><p class="big">{{ summary.total_hold_seconds|seconds }}</p></div>
+  <div class="card"><p class="muted small">Last workout</p><p class="big small-big">{{ summary.last_workout|day }}</p></div>
+</section>
+
+<h2>Weekly reps · last 12 weeks</h2>
+<div class="card">
+  <div class="bars">
+    {% for week in volume %}
+    <div class="bar" title="{{ week.label }}: {{ week.reps }} reps, {{ week.workouts }} workouts">
+      <span class="fill{% if loop.last %} now{% endif %}" style="height: {{ [week.pct, 2]|max }}%"></span>
+      <span class="label">{{ week.label if loop.index0 % 3 == 0 or loop.last else '' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<h2>Programs</h2>
+{% for program in programs %}
+<div class="card flush">
+  <p class="card-title">{{ program.name }}</p>
+  <table>
+    <thead><tr><th>Exercise</th><th class="num">Sets</th><th>Range</th><th>Next targets</th><th>Tempo</th><th>Resistance</th></tr></thead>
+    <tbody>
+      {% for ex in program.exercises %}
+      <tr>
+        <td>{{ ex.name }}{% if ex.measure == 'seconds' %} <span class="pill">hold</span>{% endif %}{% if ex.laterality == 'unilateral' %} <span class="pill">per side</span>{% endif %}</td>
+        <td class="num">{{ ex.sets }}</td>
+        <td>{{ ex.range }}{{ 's' if ex.measure == 'seconds' else '' }}</td>
+        <td>{{ ex.targets|join(' · ') }}</td>
+        <td>{{ '—' if ex.measure == 'seconds' else ex.tempo }}</td>
+        <td>{{ ex.resistance }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">Nothing synced yet.</p>
+{% endfor %}
+
+{% if records %}
+<h2>Personal records</h2>
+<div class="card flush">
+  <table>
+    <thead><tr><th>Exercise</th><th>Kind</th><th class="num">Best</th><th>Resistance</th><th>When</th></tr></thead>
+    <tbody>
+      {% for pr in records %}
+      <tr><td>{{ pr.exercise }}</td><td>{{ pr.kind }}</td><td class="num">{{ pr.value }}</td><td>{{ pr.resistance }}</td><td>{{ pr.achieved_at|day }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>Workouts</h2>
+{% if sessions %}
+<div class="card flush">
+  <table>
+    <thead><tr><th>Date</th><th>Program</th><th class="num">Minutes</th><th class="num">Sets</th><th class="num">Reps</th><th class="num">Holds</th></tr></thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td><a href="{{ url_for('admin_session', user_id=user.id, session_id=s.id) }}">{{ s.started_at|day }}</a>{% if s.status == 'aborted' %} <span class="pill warn">ended early</span>{% endif %}</td>
+        <td>{{ s.program }}</td>
+        <td class="num">{{ s.duration_min }}</td>
+        <td class="num">{{ s.sets }}</td>
+        <td class="num">{{ s.reps }}</td>
+        <td class="num">{{ s.hold_seconds|seconds if s.hold_seconds else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if more_sessions %}<p class="muted small">{{ more_sessions }} older workouts not shown.</p>{% endif %}
+{% else %}
+<p class="muted">No workouts yet.</p>
+{% endif %}
+
+<h2>Signed-in devices</h2>
+<div class="card flush">
+  <table>
+    <thead><tr><th>Device</th><th>Signed in</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+      {% for d in devices %}
+      <tr>
+        <td class="small">{{ d.label[:60] }}</td>
+        <td class="small">{{ d.created_at|when }}</td>
+        <td class="small">{{ d.last_used_at|when }}</td>
+        <td>
+          {% if d.revoked_at %}<span class="muted small">signed out</span>{% else %}
+          <form method="post" action="{{ url_for('revoke_device', user_id=user.id, device_id=d.id) }}"><button class="link warn">Sign out</button></form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No devices.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

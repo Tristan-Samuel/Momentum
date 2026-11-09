@@ -28,3 +28,10 @@ macos/App/Pods
 
 # Graphify
 graphify-out
+
+# Server
+.venv
+__pycache__
+.pytest_cache
+server/instance
+.env

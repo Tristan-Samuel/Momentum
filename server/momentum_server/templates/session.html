@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Momentum · {{ detail.program }}{% endblock %}
+{% block content %}
+<p class="eyebrow"><a href="{{ url_for('admin_user', user_id=user.id) if current_user.id != user.id else url_for('me') }}">← {{ user.email }}</a></p>
+<h1>{{ detail.program }}</h1>
+<p class="muted">{{ detail.started_at|when }} · {{ detail.duration_min }} min{% if detail.status == 'aborted' %} · ended early{% endif %}</p>
+
+{% for ex in detail.exercises %}
+<div class="card flush">
+  <p class="card-title">
+    {{ ex.name }}
+    <span class="muted small">{{ ex.resistance }}{% if ex.rating %} · felt {{ ex.rating }}{% endif %}{% if ex.rir is not none %} · RIR {{ ex.rir }}{% endif %}{% if ex.form == 'poor' %} · form slipped{% endif %}</span>
+  </p>
+  <table>
+    <thead><tr><th>Set</th><th class="num">Target</th><th class="num">Done</th><th class="num">Right / left</th><th class="num">Rest</th></tr></thead>
+    <tbody>
+      {% for set in ex.sets %}
+      <tr>
+        <td>{{ set.index }}</td>
+        <td class="num">{{ set.target }}{{ ex.unit }}</td>
+        <td class="num">{% if set.skipped %}<span class="pill warn">skipped</span>{% else %}{{ set.done }}{{ ex.unit }}{% endif %}</td>
+        <td class="num">{% if set.left is not none or set.right is not none %}{{ set.right if set.right is not none else '—' }} / {{ set.left if set.left is not none else '—' }}{% else %}—{% endif %}</td>
+        <td class="num">{{ set.rest|seconds if set.rest else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">No exercises logged.</p>
+{% endfor %}
+{% endblock %}

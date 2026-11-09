@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f1ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+  <title>{% block title %}Momentum{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=1">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{{ url_for('home') }}">MOMENTUM</a>
+    {% if current_user %}
+    <nav>
+      {% if is_admin %}<a href="{{ url_for('admin_users') }}">Users</a>{% endif %}
+      <a href="{{ url_for('me') }}">My training</a>
+      <form method="post" action="{{ url_for('logout') }}"><button class="link">Sign out</button></form>
+    </nav>
+    {% endif %}
+  </header>
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

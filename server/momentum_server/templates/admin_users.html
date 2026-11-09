@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Momentum · Users{% endblock %}
+{% block content %}
+<p class="eyebrow">ADMIN</p>
+<h1>Users</h1>
+<p class="muted">{{ rows|length }} account{{ '' if rows|length == 1 else 's' }} have signed in.</p>
+{% if rows %}
+<div class="card flush">
+  <table>
+    <thead>
+      <tr><th>Account</th><th class="num">Workouts</th><th>Last workout</th><th class="num">Reps</th><th>Last sync</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <a href="{{ url_for('admin_user', user_id=row.user.id) }}">{{ row.user.email }}</a>
+          {% if row.user.name %}<div class="muted small">{{ row.user.name }}</div>{% endif %}
+        </td>
+        <td class="num">{{ row.summary.workouts }}</td>
+        <td>{{ row.summary.last_workout|day }}</td>
+        <td class="num">{{ row.summary.total_reps }}</td>
+        <td class="small">{{ row.user.last_sync_at|when }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
