@@ -2,7 +2,7 @@
 
 A local-first personal workout coach. Open the app, press **Start**, and let it run the session: countdown, tempo metronome, rest, transitions, and the next recommended targets.
 
-This is not a social fitness app. It is a training instrument for one person, on one device. There is no account, no backend, and no cloud sync. Everything lives on the device that runs the app.
+This is not a social fitness app. It is a training instrument for one person. The phone holds the data. Signing in with tssamuel.com uploads a copy you can restore on another phone and read at momentum.tssamuel.com.
 
 ---
 
@@ -14,8 +14,12 @@ This is not a social fitness app. It is a training instrument for one person, on
 - Lets you log actual reps, skip a set, reduce the target mid-set, and rate difficulty / RIR / form.
 - Recommends the next session’s targets from a simple rep-range progression (hold, add a rep, or increase difficulty and reset toward the bottom of the range).
 - Stores programs, sessions, personal records, and settings in IndexedDB via Dexie. Works fully offline after the first load.
+- Keeps more than one program and suggests the next one in rotation. Home can start a different one.
+- Times isometric holds (planks, hangs) with a countdown, including a short switch between sides.
+- Shows a weekly streak, a 12-week calendar, volume, and how this session compared with the last one.
+- Exports and imports a JSON backup from Settings.
 - Resumes an incomplete workout if you leave mid-session.
-- Tracks history, lifetime totals, and per-exercise trends on the Progress screen.
+- Uploads each change to tssamuel.com after you sign in, and restores that copy in one tap.
 
 
 
@@ -24,13 +28,13 @@ This is not a social fitness app. It is a training instrument for one person, on
 
 | Route    | Purpose                                                                        |
 | -------- | ------------------------------------------------------------------------------ |
-| Home     | Next workout card, last session, completed-workout count                       |
-| Workout  | Full-screen runner (countdown, set, rest, transition)                          |
-| Review   | Post-workout summary and apply-progression prompt                              |
-| History  | Past sessions and per-session detail                                           |
-| Progress | Rep and resistance trends plus personal records                                |
-| Program  | Edit program name, exercises, sets, tempo, rest, laterality                    |
-| Settings | Theme, sound profile, volume, haptics, wake lock, notifications, accessibility |
+| Home     | Program picker, this week’s streak, next workout, last session                 |
+| Workout  | Full-screen runner (countdown, tempo or timed hold, rest, transition)          |
+| Review   | Post-workout summary, set deltas, and apply-progression prompt                 |
+| History  | Past sessions grouped by month, and per-session detail                         |
+| Progress | Weekly volume, last-session comparison, trends, and personal records           |
+| Program  | Several programs: order, duplicate, and per-exercise steppers                  |
+| Settings | Account and sync, weekly goal, sound, appearance, JSON backup                  |
 
 
 ---
@@ -80,7 +84,8 @@ Unilateral work (pistol squat) uses the weaker-leg rep count for progression.
 | Timing         | Wall-clock scheduler (`src/timing-engine`)             |
 | Workout state  | Deterministic engine (`src/workout-engine`)            |
 | Native shell   | Capacitor 8 (`appId`: `com.momentum.workout`)          |
-| Native plugins | `@capacitor/haptics`, `@capacitor/local-notifications` |
+| Native plugins | App, Filesystem, Haptics, Local Notifications, Share   |
+| Sync server    | Flask on `127.0.0.1:5141` (`server/`), SQLite          |
 
 
 Platform adapters in `src/platform/` keep the workout engine independent of the host. On the web they use Vibration, Wake Lock, and the Notifications API. Inside a Capacitor shell they call native haptics and local notifications when available.
@@ -374,17 +379,21 @@ If you used a free Apple ID, set a reminder to re-run from Xcode before day 7 or
 src/
   audio-engine/      Web Audio cues and sound profiles
   components/        Shell, buttons, charts, workout chrome
-  database/          Dexie schema, repository, seed program
+  database/          Dexie schema, repository, seed program, JSON backup
   hooks/             Settings, prepared workout, runner, resume
-  platform/          Haptics, wake lock, notifications, background policy
+  platform/          Haptics, wake lock, notifications, files, sign-in
   progression/       Rep-range algorithm and apply helpers
   screens/           Route-level UI
-  timing-engine/     Clock, cue list, scheduler
+  sync/              Outbox, push, restore, device token
+  timing-engine/     Clock, cue list, scheduler, hold cues
   types/             Shared domain types
-  utils/             Tempo, duration, ids, stats, time
+  utils/             Tempo, duration, ids, stats, streak, time
   workout-engine/    Session state machine and persistence
+server/              Flask sync API and admin pages
+deploy/              systemd unit, env example, Caddy snippet
 capacitor.config.ts  appId com.momentum.workout, webDir dist
 public/              PWA manifest and icon
+requirements.txt     Server pins (Flask, gunicorn, pytest)
 ```
 
 Native folders after you add platforms:
@@ -400,9 +409,29 @@ Native folders after you add platforms:
 
 - Database name: `momentum` (IndexedDB).
 - Tables: programs, exercises, configurations, progression, sessions, sets, personal records, settings.
-- `syncStatus` is always `local`. Nothing is uploaded.
+- The phone is the source of truth. Settings → Sign in uploads changes to `https://momentum.tssamuel.com` and can restore that copy.
+- A JSON file from Settings → Export is the offline copy. Import replaces what is on the phone.
 - Browser: clearing site data wipes history. Native: deleting the app wipes history.
 - Safari home-screen and the Capacitor app do **not** share storage. Treat them as two separate installs.
+
+### Sync server
+
+The API lives in this repo under `server/`. Gunicorn binds `127.0.0.1:5141`. Sign-in goes through login.tssamuel.com. The server exchanges the code on localhost, then gives the app a device token.
+
+Local check, with no login service configured (a dev account is created on `/login`):
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cd server && ../.venv/bin/pytest
+cd server && ../.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
+```
+
+Production reads `/etc/momentum.env`. Copy `deploy/momentum.env.example`. Set `MOMENTUM_SECRET_KEY`, `LOGIN_CLIENT_SECRET`, and `MOMENTUM_ADMIN_EMAILS` (comma-separated tssamuel.com emails that may open `/admin`). Everyone else who signs in only sees `/me`.
+
+The iPhone sign-in sheet is `ios/App/App/WebAuthPlugin.swift`. The web app falls back to `/auth/callback`. Point the app at another server with `VITE_SYNC_URL` (default `https://momentum.tssamuel.com`).
+
+pi-admin installs this app as the `momentum` unit. See vps-stack `PI.md` section 27.
 
 ---
 
@@ -437,4 +466,4 @@ Official Capacitor references: [Environment setup](https://capacitorjs.com/docs/
 npm test
 ```
 
-Coverage includes the workout engine, progression rules, repository, cue list, and tempo helpers. Run this before a device sync if you changed engine or database code.
+Coverage includes the workout engine, progression rules, repository, cue list, tempo helpers, streaks, holds, backup, and sync. The server suite is `cd server && ../.venv/bin/pytest`. Run the suite that matches the code you changed before a device sync.
