@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSettings } from '@/hooks/useSettings';
+import { AccountSection } from '@/components/AccountSection';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Card } from '@/components/ui/Card';
@@ -25,15 +26,10 @@ import { TEST_CUES } from '@/audio-engine/profiles';
 import { haptics } from '@/platform/haptics';
 import { pickTextFile, shareTextFile } from '@/platform/files';
 import { requestNotificationPermission, sendTestNotification } from '@/platform/notifications';
+import { afterLocalReplace } from '@/sync/engine';
 import type { SoundProfile, ThemePreference } from '@/types';
 
-type Props = {
-  /** Rendered at the top of Data; the account/sync card plugs in here. */
-  account?: ReactNode;
-  onImported?: () => void;
-};
-
-export function SettingsScreen({ account, onImported }: Props = {}) {
+export function SettingsScreen() {
   const settings = useSettings();
   const [cueStatus, setCueStatus] = useState<string | null>(null);
   const [notifyStatus, setNotifyStatus] = useState<string | null>(null);
@@ -53,6 +49,8 @@ export function SettingsScreen({ account, onImported }: Props = {}) {
       <Link to="/guide" className="mt-4 inline-flex items-center gap-1 text-[var(--muted)]">
         How it works <Icon name="chevron-right" size={16} />
       </Link>
+
+      <AccountSection />
 
       <Group label="Training">
         <Stepper
@@ -213,8 +211,6 @@ export function SettingsScreen({ account, onImported }: Props = {}) {
         </div>
       </Group>
 
-      {account}
-
       <Group label="Backup">
         <p className="text-sm leading-relaxed text-[var(--muted)]">
           Save everything (programs, workouts, records, settings) to a JSON file, or restore from one.
@@ -306,7 +302,7 @@ export function SettingsScreen({ account, onImported }: Props = {}) {
           void importAll(pendingImport)
             .then(() => {
               setDataStatus('Backup restored.');
-              onImported?.();
+              void afterLocalReplace();
             })
             .catch(() => setDataStatus('Could not import that backup.'))
             .finally(() => {
