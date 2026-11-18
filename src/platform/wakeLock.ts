@@ -1,6 +1,8 @@
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
 /**
- * Screen wake lock. iOS Safari support is inconsistent; this is the V1
- * "phone face-up" strategy, not lock-screen coaching.
+ * Keeps the screen on during a workout.
+ * On iPhone this disables the idle timer. The browser Wake Lock API is a no-op in the app's WebView.
  */
 
 type WakeLockSentinel = {
@@ -8,9 +10,17 @@ type WakeLockSentinel = {
   release: () => Promise<void>;
 };
 
+type KeepAwakePlugin = {
+  keepAwake(): Promise<void>;
+  allowSleep(): Promise<void>;
+};
+
+const KeepAwake = registerPlugin<KeepAwakePlugin>('KeepAwake');
+
 export class WakeLockPort {
   private sentinel: WakeLockSentinel | null = null;
   private enabled = true;
+  private nativeHeld = false;
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
@@ -21,6 +31,11 @@ export class WakeLockPort {
 
   async request(): Promise<void> {
     if (!this.enabled || typeof navigator === 'undefined') return;
+    if (Capacitor.isNativePlatform()) {
+      await KeepAwake.keepAwake();
+      this.nativeHeld = true;
+      return;
+    }
     const nav = navigator as Navigator & {
       wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinel> };
     };
@@ -33,6 +48,10 @@ export class WakeLockPort {
   }
 
   async release(): Promise<void> {
+    if (this.nativeHeld) {
+      this.nativeHeld = false;
+      await KeepAwake.allowSleep().catch(() => undefined);
+    }
     try {
       await this.sentinel?.release();
     } catch {

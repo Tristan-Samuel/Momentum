@@ -4,5 +4,6 @@ import UIKit
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(WebAuthPlugin())
+        bridge?.registerPluginInstance(KeepAwakePlugin())
     }
 }

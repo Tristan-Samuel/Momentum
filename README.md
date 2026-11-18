@@ -90,7 +90,7 @@ Unilateral work (pistol squat) uses the weaker-leg rep count for progression.
 
 Platform adapters in `src/platform/` keep the workout engine independent of the host. On the web they use Vibration, Wake Lock, and the Notifications API. Inside a Capacitor shell they call native haptics and local notifications when available.
 
-**Browser / web limits:** iOS Safari suspends `AudioContext` and throttles timers when the screen is locked or the tab is backgrounded. During a set, keep the phone face-up. Wake Lock is used when the browser supports it. Rest timers catch up from wall-clock time when you return. Native background audio is not implemented yet (`src/platform/background.ts`).
+**Browser / web limits:** iOS Safari suspends `AudioContext` and throttles timers when the screen is locked or the tab is backgrounded. During a set, keep the phone face-up. Wake Lock is used when the browser supports it. On the iPhone app, Keep awake disables the idle timer for the whole workout, so the screen stays on with your hands off the phone. Locking it yourself, or leaving the app, still pauses an active set. Rest timers catch up from wall-clock time when you return. Native background audio is not implemented yet (`src/platform/background.ts`).
 
 ---
 
@@ -184,7 +184,7 @@ If tests fail, fix that before packaging for a phone. The workout engine and pro
 2. A 3-2-1 countdown runs, then the metronome drives each tempo phase (**Lower / Pause / Lift / Hold**).
 3. Follow the current rep. When the set ends, confirm or edit completed reps from **Controls** if needed.
 4. Rate the exercise when prompted (too easy / good / hard / too hard, RIR 0–3+, optional poor form). That rating feeds next-session targets.
-5. Rest and transition rings count down. Keep the screen on during sets. If you background the app during rest, the timer catches up when you return.
+5. Rest and transition rings count down. On the iPhone app the screen stays on for the workout when Keep awake is on. If you lock it yourself or leave the app during rest, the timer catches up when you return.
 6. Review applies or shows the next targets. History and Progress update after a completed session.
 
 **Controls** (workout sheet): pause, skip set, reduce target, finish early, or abort. An incomplete session can be resumed or discarded from the Home overlay.
@@ -451,7 +451,7 @@ pi-admin installs this app as the `momentum` unit. See vps-stack `PI.md` section
 | Symptom                                     | What to try                                                                                          |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | No sound                                    | Rebuild the native app after this update. Raise ringer volume, tap a Settings test cue, and confirm Sounds is on. The Silent switch should no longer mute Web Audio. If the profile is Silent, tests still play a standard cue. |
-| Metronome dies when the screen locks        | Expected on web and still expected in V1 native. Keep Awake on; leave the screen on during sets.     |
+| Screen sleeps during a set                  | On the phone, Keep awake must be on and the app must be a build that includes `KeepAwakePlugin`. The screen stays on until the workout ends. Locking it yourself still pauses the set. |
 | Xcode: signing / team errors                | Add your Apple ID under Xcode → Settings → Accounts. Unique bundle id if the default is claimed.     |
 | Xcode: device not eligible / Developer Mode | Settings → Privacy & Security → Developer Mode, restart, confirm.                                    |
 | Untrusted developer                         | Settings → General → VPN & Device Management → Trust.                                                |
