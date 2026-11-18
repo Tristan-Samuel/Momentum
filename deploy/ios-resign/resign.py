@@ -6,8 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import re
 import shutil
+import socket
+import struct
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -269,11 +272,71 @@ def install_ipa(settings: Settings) -> bool:
     return succeeded
 
 
+def usbmux_plist_packet(payload: dict, tag: int = 1) -> bytes:
+    body = plistlib.dumps(payload, fmt=plistlib.FMT_XML)
+    return struct.pack("<IIII", 16 + len(body), 1, 8, tag) + body
+
+
+def pairing_files(record: dict, udid: str) -> dict[str, bytes]:
+    stored = dict(record)
+    stored.setdefault("UDID", udid)
+    system = {"HostID": record["HostID"], "SystemBUID": record["SystemBUID"]}
+    return {
+        f"{udid}.plist": plistlib.dumps(stored, fmt=plistlib.FMT_XML),
+        "SystemConfiguration.plist": plistlib.dumps(system, fmt=plistlib.FMT_XML),
+    }
+
+
+def _recv_exact(sock: socket.socket, size: int) -> bytes:
+    buf = b""
+    while len(buf) < size:
+        chunk = sock.recv(size - len(buf))
+        if not chunk:
+            raise RuntimeError("usbmuxd closed the connection")
+        buf += chunk
+    return buf
+
+
+def read_pair_record(udid: str, socket_path: str = "/var/run/usbmuxd") -> dict:
+    packet = usbmux_plist_packet(
+        {
+            "MessageType": "ReadPairRecord",
+            "PairRecordID": udid,
+            "ClientVersionString": "usbmuxd-1.0",
+            "ProgName": "momentum-resign",
+            "kLibUSBMuxVersion": 3,
+        }
+    )
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(socket_path)
+        sock.sendall(packet)
+        length = struct.unpack("<IIII", _recv_exact(sock, 16))[0]
+        payload = plistlib.loads(_recv_exact(sock, length - 16))
+    data = payload.get("PairRecordData")
+    if not data:
+        raise RuntimeError("usbmuxd did not return a pair record for this iPhone")
+    return plistlib.loads(data)
+
+
+def export_pair(udid: str, directory: Path, socket_path: str = "/var/run/usbmuxd") -> None:
+    files = pairing_files(read_pair_record(udid, socket_path), udid)
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, blob in files.items():
+        path = directory / name
+        path.write_bytes(blob)
+        path.chmod(0o600)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Re-sign Momentum onto the paired iPhone")
     parser.add_argument("--write-env", action="store_true", help="write a systemd env file from the process environment")
     parser.add_argument("--paired-udid", action="store_true", help="read devicectl JSON on stdin and print udid, name, transport")
+    parser.add_argument("--export-pair", nargs=2, metavar=("UDID", "DIR"), help="write this Mac's pair record for the UDID")
     args = parser.parse_args(argv)
+    if args.export_pair:
+        udid, directory = args.export_pair
+        export_pair(udid, Path(directory))
+        return 0
     if args.write_env:
         sys.stdout.write(systemd_environment(env_values_from_environ()))
         return 0

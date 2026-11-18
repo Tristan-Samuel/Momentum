@@ -1,4 +1,6 @@
 import json
+import plistlib
+import struct
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -113,6 +115,28 @@ class RefreshDecisionTest(unittest.TestCase):
     def test_paired_iphone_returns_none_when_only_simulators_are_listed(self):
         document = {"result": {"devices": [{"hardwareProperties": {"reality": "simulated", "productType": "iPhone18,3", "udid": "sim"}}]}}
         self.assertIsNone(resign.paired_iphone(document))
+
+
+class PairExportTest(unittest.TestCase):
+    def test_pairing_files_keep_the_private_key_off_the_system_plist(self):
+        record = {
+            "HostID": "host",
+            "SystemBUID": "buid",
+            "HostPrivateKey": b"secret",
+        }
+        files = resign.pairing_files(record, "UDID")
+        device = plistlib.loads(files["UDID.plist"])
+        system = plistlib.loads(files["SystemConfiguration.plist"])
+        self.assertEqual(device["UDID"], "UDID")
+        self.assertEqual(device["HostPrivateKey"], b"secret")
+        self.assertEqual(system, {"HostID": "host", "SystemBUID": "buid"})
+
+    def test_usbmux_packet_is_a_version_one_plist_message(self):
+        packet = resign.usbmux_plist_packet({"MessageType": "ReadPairRecord"})
+        length, version, message, tag = struct.unpack("<IIII", packet[:16])
+        self.assertEqual(length, len(packet))
+        self.assertEqual((version, message, tag), (1, 8, 1))
+        self.assertEqual(plistlib.loads(packet[16:])["MessageType"], "ReadPairRecord")
 
 
 if __name__ == "__main__":

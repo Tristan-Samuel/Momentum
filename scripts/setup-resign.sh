@@ -128,24 +128,10 @@ cleanup() {
 trap cleanup EXIT
 REMOTE_WORK=$(pi mktemp -d /tmp/momentum-resign.XXXXXX)
 
-# The phone already trusts this Mac. Copy that pairing so the Pi can refresh over Wi-Fi
-# without a second Trust prompt on the Pi's USB port.
-if ! osascript - "$UDID" "$WORK" "$USER" <<'APPLESCRIPT'
-on run argv
-  set udid to item 1 of argv
-  set dest to item 2 of argv
-  set owner to item 3 of argv
-  set sys to dest & "/SystemConfiguration.plist"
-  set dev to dest & "/" & udid & ".plist"
-  do shell script "cp /var/db/lockdown/SystemConfiguration.plist " & quoted form of sys & " && cp /var/db/lockdown/" & quoted form of (udid & ".plist") & " " & quoted form of dev & " && chown " & quoted form of owner & " " & quoted form of sys & " " & quoted form of dev & " && chmod 600 " & quoted form of sys & " " & quoted form of dev with administrator privileges
-end run
-APPLESCRIPT
-then
-  echo "macOS blocked the iPhone pairing files in /var/db/lockdown." >&2
-  echo "System Settings → Privacy & Security → Full Disk Access → enable Cursor, then run npm run ios:setup again." >&2
-  open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" >/dev/null 2>&1 || true
-  exit 1
-fi
+# The phone already trusts this Mac. Ask usbmuxd for that record so the Pi can
+# refresh over Wi-Fi without a second Trust prompt. macOS hides /var/db/lockdown
+# from every app, including ones with Full Disk Access.
+python3 deploy/ios-resign/resign.py --export-pair "$UDID" "$WORK"
 copy_to_pi "$WORK/"*.plist "${SCP_TARGET}:${REMOTE_WORK}/"
 pi sudo -n /usr/local/sbin/momentum-resign-apply pairing "$REMOTE_WORK"
 
