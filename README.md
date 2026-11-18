@@ -266,19 +266,7 @@ To try the UI without a device, pick an iPhone simulator in Xcode and press Play
 
 #### A7. Let the Pi refresh the 7-day signature
 
-The Pi cannot compile the app. It re-signs the last IPA from this Mac and installs that over the same bundle id, `com.momentum.workout`, so the icon and the on-device workouts stay. Do not delete the Momentum icon.
-
-With the iPhone unlocked on the same Wi-Fi as this Mac:
-
-```bash
-npm run ios:setup
-```
-
-That builds the IPA, installs the Pi units, copies the Mac's pairing record (so the phone does not need a second Trust tap on the Pi), and asks in Mac dialogs for the Pi sudo password, the Apple ID password, and a verification code if Apple sends one. Reach a Pi that is not on `.local` with Tailscale, or set `MOMENTUM_PI=user@host`.
-
-A timer then checks every 30 minutes. It installs again when the last success is at least 5 days old and the phone is unlocked on the home Wi-Fi. Run `npm run ios:setup` again after app changes. `journalctl -u momentum-resign -n 40 --no-pager` on the Pi shows the last decision. Trust the cert once under **Settings → General → VPN & Device Management** if iOS asks.
-
-The phone and the Pi have to share the home Wi-Fi so Bonjour can see the phone. The password sits in `/etc/momentum-resign.env` and is briefly visible in process arguments on the Pi. There is no Cloudflare hostname for this service.
+Follow [deploy/ios-resign/SETUP.md](deploy/ios-resign/SETUP.md). The iPhone plugs into the Mac once. It never plugs into the Pi. Leave the Momentum icon in place, and leave the phone unlocked on the Pi's home Wi-Fi for the install.
 
 ---
 
@@ -469,7 +457,7 @@ pi-admin installs this app as the `momentum` unit. See vps-stack `PI.md` section
 | Untrusted developer                         | Settings → General → VPN & Device Management → Trust.                                                |
 | `npx cap add ios` / sync fails              | `npm run build` so `dist/` exists. Node 22+. Xcode 26+.                                              |
 | Stale UI on the phone                       | `npm run cap:sync`, then Run again.                                                                  |
-| Free provisioning expired                   | A7. Phone unlocked on the home Wi-Fi. `journalctl -u momentum-resign -n 40 --no-pager`. Xcode Run still refreshes it too. |
+| Free provisioning expired                   | [deploy/ios-resign/SETUP.md](deploy/ios-resign/SETUP.md). Phone unlocked on the Pi's home Wi-Fi. |
 | Android device missing                      | USB debugging on, accept the RSA prompt, try another cable/port.                                     |
 | Resume overlay after a crash                | Resume or Discard. Discard does not keep the partial session.                                        |
 
