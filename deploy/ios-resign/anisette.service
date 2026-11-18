@@ -1,0 +1,18 @@
+[Unit]
+Description=Local anisette for Momentum resign
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=momentum-anisette
+Group=momentum-anisette
+Environment=RUNTIME_DIRECTORY=/var/lib/momentum-resign/anisette
+WorkingDirectory=/var/lib/momentum-resign/anisette
+ExecStart=/usr/local/lib/momentum-resign/anisette-v3-server --host 127.0.0.1 --port 6969 --adi-path /var/lib/momentum-resign/anisette
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

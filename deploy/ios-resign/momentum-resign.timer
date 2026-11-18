@@ -1,0 +1,11 @@
+[Unit]
+Description=Check whether Momentum needs a new 7-day signature
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

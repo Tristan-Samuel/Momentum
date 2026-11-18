@@ -159,6 +159,7 @@ Useful scripts:
 | `npm run build`      | Typecheck and production bundle into `dist/`                   |
 | `npm run preview`    | Serve the production bundle locally                            |
 | `npm run cap:sync`   | Build, then copy `dist/` into native projects (`npx cap sync`) |
+| `npm run ios:ipa`    | Mac only. Unsigned iPhone IPA at `build/Momentum.ipa` for the Pi |
 
 
 The app does not call a server. After the first load, start a workout, log sets, and compute progression with no network.
@@ -195,7 +196,7 @@ If tests fail, fix that before packaging for a phone. The workout engine and pro
 
 Pick one path. For daily training on an iPhone, use **Path A** (native Capacitor app). Use **Path B** for Android. Use **Path C** only for a quick Safari try — it will not keep a reliable metronome if the screen locks.
 
-The repo includes the `ios/` native project. After web changes, run `npm run cap:sync` and run the app from Xcode again. Add Android later with `npx cap add android` if you need it.
+The repo includes the `ios/` native project. After web changes, run `npm run cap:sync` and run the app from Xcode again. Once the Pi is refreshing the signature (A7), ship those changes with `npm run ios:ipa` instead of another Xcode Run. Add Android later with `npx cap add android` if you need it.
 
 ### Path A — iPhone (recommended)
 
@@ -231,7 +232,7 @@ Xcode should open the **App** workspace. In the left sidebar, click the blue **A
 4. Under **Team**, choose **Your Name (Personal Team)**.
 5. Confirm **Bundle Identifier** is `com.momentum.workout`. If Xcode says the id is taken on that team, append your initials, for example `com.momentum.workout.yourname`, and keep `capacitor.config.ts` `appId` in sync before the next `npx cap sync`.
 
-A free Apple ID is enough to run on your own iPhone. The install expires after **7 days**; run the app from Xcode again to refresh it. A paid Apple Developer Program membership ($99/year) is what you need for TestFlight, the App Store, or long-lived device installs.
+A free Apple ID is enough to run on your own iPhone. The install expires after **7 days**. Xcode Run refreshes it. After the one-time pairing in A7, the Pi refreshes it on the home Wi-Fi. A paid Apple Developer Program membership ($99/year) is what you need for TestFlight, the App Store, or long-lived device installs.
 
 #### A4. Prepare the iPhone
 
@@ -261,6 +262,42 @@ You now have a home-screen app. Data lives in that app’s WebView storage, not 
 #### A6. iPhone Simulator (optional)
 
 To try the UI without a device, pick an iPhone simulator in Xcode and press Play. Audio and haptics are weaker in the simulator than on hardware. Always do one real-device workout before you rely on it.
+
+#### A7. Let the Pi refresh the 7-day signature
+
+The Pi cannot compile the app. It re-signs the last IPA from this Mac and installs that over the same bundle id, `com.momentum.workout`, so the icon and the on-device workouts stay. Do not delete the Momentum icon.
+
+On the Mac, in Finder, select the iPhone and turn on **Show this iPhone when on Wi-Fi**, then Apply. Build the IPA:
+
+```bash
+npm run ios:ipa
+scp build/Momentum.ipa YOURUSER@pi5.local:/tmp/Momentum.ipa
+```
+
+On the Pi, from `~/apps/momentum` after this repo is current:
+
+```bash
+sudo bash deploy/ios-resign/install.sh
+sudo install -m 0644 /tmp/Momentum.ipa /var/lib/momentum-resign/Momentum.ipa
+```
+
+Edit `/etc/momentum-resign.env` (mode 600). Use the same Apple ID as the Xcode Personal Team, and the account password, not an app-specific password. Plug the phone into the Pi once, tap Trust, then:
+
+```bash
+sudo idevicepair pair
+sudo idevice_id -l
+```
+
+Put that id in `DEVICE_UDID` and unplug. If Apple asks for a code on the first install:
+
+```bash
+echo 123456 | sudo tee /var/lib/momentum-resign/2fa
+sudo systemctl start momentum-resign.service
+```
+
+A timer checks every 30 minutes. It installs again when the last success is at least 5 days old, the IPA is on disk, and the phone is unlocked on the home Wi-Fi. `journalctl -u momentum-resign -n 40 --no-pager` shows the last decision. Trust the cert once under **Settings → General → VPN & Device Management** if iOS asks. Later app changes are a new `npm run ios:ipa` and another copy to `/var/lib/momentum-resign/Momentum.ipa`.
+
+The phone and the Pi have to share the home Wi-Fi so Bonjour can see the phone. The password sits in `/etc/momentum-resign.env` and is briefly visible in process arguments on the Pi. There is no Cloudflare hostname for this service.
 
 ---
 
@@ -334,6 +371,8 @@ npx cap run ios
 # or
 npx cap run android
 ```
+
+When A7 is already refreshing the phone, run `npm run ios:ipa` and copy `build/Momentum.ipa` to `/var/lib/momentum-resign/Momentum.ipa` on the Pi instead of another Xcode Run.
 
 `cap:sync` rebuilds `dist/` and copies it into `ios/` and `android/`. Skipping it leaves the phone on the old bundle.
 
@@ -449,7 +488,7 @@ pi-admin installs this app as the `momentum` unit. See vps-stack `PI.md` section
 | Untrusted developer                         | Settings → General → VPN & Device Management → Trust.                                                |
 | `npx cap add ios` / sync fails              | `npm run build` so `dist/` exists. Node 22+. Xcode 26+.                                              |
 | Stale UI on the phone                       | `npm run cap:sync`, then Run again.                                                                  |
-| Free provisioning expired                   | Re-run from Xcode. Installs last 7 days.                                                             |
+| Free provisioning expired                   | A7. Phone unlocked on the home Wi-Fi. `journalctl -u momentum-resign -n 40 --no-pager`. Xcode Run still refreshes it too. |
 | Android device missing                      | USB debugging on, accept the RSA prompt, try another cable/port.                                     |
 | Resume overlay after a crash                | Resume or Discard. Discard does not keep the partial session.                                        |
 
@@ -466,4 +505,4 @@ Official Capacitor references: [Environment setup](https://capacitorjs.com/docs/
 npm test
 ```
 
-Coverage includes the workout engine, progression rules, repository, cue list, tempo helpers, streaks, holds, backup, and sync. The server suite is `cd server && ../.venv/bin/pytest`. Run the suite that matches the code you changed before a device sync.
+Coverage includes the workout engine, progression rules, repository, cue list, tempo helpers, streaks, holds, backup, and sync. The server suite is `cd server && ../.venv/bin/pytest`. The Pi refresh decision is `python3 -m unittest discover -s deploy/ios-resign -p 'test_*.py'`. Run the suite that matches the code you changed before a device sync.

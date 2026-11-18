@@ -29,6 +29,9 @@ macos/App/Pods
 # Graphify
 graphify-out
 
+# Unsigned IPA export for the Pi resign service
+/build/
+
 # Server
 .venv
 __pycache__

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "cap:sync": "npm run build && npx cap sync"
+    "cap:sync": "npm run build && npx cap sync",
+    "ios:ipa": "bash scripts/export-ipa.sh"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.2",

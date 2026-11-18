@@ -1,0 +1,13 @@
+[Unit]
+Description=Wi-Fi and USB bridge for the paired iPhone
+After=avahi-daemon.service
+Wants=avahi-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/momentum-resign/netmuxd
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
