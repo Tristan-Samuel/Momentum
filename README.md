@@ -274,7 +274,7 @@ With the iPhone unlocked on the same Wi-Fi as this Mac:
 npm run ios:setup
 ```
 
-That builds the IPA, installs the Pi units, copies the Mac's pairing record (so the phone does not need a second Trust tap on the Pi), and asks in Mac dialogs for the Pi sudo password, the Apple ID password, and a verification code if Apple sends one. Reach a Pi that is not on `.local` with Tailscale, or set `MOMENTUM_PI=user@host`.
+That builds the IPA, installs the Pi units, copies the Mac's pairing record (so the phone does not need a second Trust tap on the Pi), and asks in Mac dialogs for the Pi sudo password, the Apple ID password, and a verification code if Apple sends one. Cursor needs Full Disk Access to read the pairing files. Reach a Pi that is not on `.local` with Tailscale, or set `MOMENTUM_PI=user@host`.
 
 A timer then checks every 30 minutes. It installs again when the last success is at least 5 days old and the phone is unlocked on the home Wi-Fi. Run `npm run ios:setup` again after app changes. `journalctl -u momentum-resign -n 40 --no-pager` on the Pi shows the last decision. Trust the cert once under **Settings → General → VPN & Device Management** if iOS asks.
 

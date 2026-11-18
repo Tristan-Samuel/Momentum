@@ -74,15 +74,21 @@ copy_to_pi() {
 }
 
 pi_root() {
-  local command=$1
+  # Quote the whole script so the Pi's shell does not treat it as `bash -c bash`.
+  local quoted
+  quoted=$(printf '%q' "$1")
   if pi sudo -n true 2>/dev/null; then
-    pi sudo -n -- bash -c "$command"
+    pi "sudo -n -- bash -c $quoted"
     return
   fi
   if [[ -z "${PI_PASS:-}" ]]; then
     PI_PASS=$(ask yes "Password for sudo on ${PI_HOST}")
+    if [[ -z "$PI_PASS" ]]; then
+      echo "The Pi sudo password is required to install the resign service." >&2
+      exit 1
+    fi
   fi
-  pi sudo -S -p '' -- bash -c "$command" <<EOF
+  pi "sudo -S -p '' -- bash -c $quoted" <<EOF
 ${PI_PASS}
 EOF
 }
@@ -99,7 +105,8 @@ pi "cd ~/${PI_DIR} && git pull --ff-only" || echo "git pull on the Pi did not fa
 copy_to_pi "$ROOT/deploy/ios-resign/"* "${SCP_TARGET}:~/${PI_DIR}/deploy/ios-resign/"
 
 if ! pi sudo -n /usr/local/sbin/momentum-resign-apply configured >/dev/null 2>&1; then
-  pi_root "bash ~/${PI_DIR}/deploy/ios-resign/install.sh"
+  PI_HOME=$(pi 'printf %s "$HOME"')
+  pi_root "bash ${PI_HOME}/${PI_DIR}/deploy/ios-resign/install.sh"
 fi
 
 PHONE_JSON=$(xcrun devicectl list devices -j - 2>/dev/null || true)
@@ -123,7 +130,7 @@ REMOTE_WORK=$(pi mktemp -d /tmp/momentum-resign.XXXXXX)
 
 # The phone already trusts this Mac. Copy that pairing so the Pi can refresh over Wi-Fi
 # without a second Trust prompt on the Pi's USB port.
-osascript - "$UDID" "$WORK" "$USER" <<'APPLESCRIPT'
+if ! osascript - "$UDID" "$WORK" "$USER" <<'APPLESCRIPT'
 on run argv
   set udid to item 1 of argv
   set dest to item 2 of argv
@@ -133,6 +140,12 @@ on run argv
   do shell script "cp /var/db/lockdown/SystemConfiguration.plist " & quoted form of sys & " && cp /var/db/lockdown/" & quoted form of (udid & ".plist") & " " & quoted form of dev & " && chown " & quoted form of owner & " " & quoted form of sys & " " & quoted form of dev & " && chmod 600 " & quoted form of sys & " " & quoted form of dev with administrator privileges
 end run
 APPLESCRIPT
+then
+  echo "macOS blocked the iPhone pairing files in /var/db/lockdown." >&2
+  echo "System Settings → Privacy & Security → Full Disk Access → enable Cursor, then run npm run ios:setup again." >&2
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" >/dev/null 2>&1 || true
+  exit 1
+fi
 copy_to_pi "$WORK/"*.plist "${SCP_TARGET}:${REMOTE_WORK}/"
 pi sudo -n /usr/local/sbin/momentum-resign-apply pairing "$REMOTE_WORK"
 
