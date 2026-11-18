@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cap:sync": "npm run build && npx cap sync",
-    "ios:ipa": "bash scripts/export-ipa.sh"
+    "ios:ipa": "bash scripts/export-ipa.sh",
+    "ios:setup": "bash scripts/setup-resign.sh"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.2",

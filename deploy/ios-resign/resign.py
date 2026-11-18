@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,6 +78,63 @@ def write_state(path: Path, when: datetime) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(payload + "\n")
     temporary.replace(path)
+
+
+_ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def systemd_environment(values: dict[str, str]) -> str:
+    """Serialize values for a systemd EnvironmentFile."""
+    lines = []
+    for key, value in values.items():
+        if not _ENV_KEY.fullmatch(key):
+            raise ValueError(f"bad env key {key}")
+        cleaned = value.replace("\r", "").replace("\n", "")
+        escaped = cleaned.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'{key}="{escaped}"')
+    return "\n".join(lines) + "\n"
+
+
+def env_values_from_environ() -> dict[str, str]:
+    required = ("APPLE_ID", "APPLE_PASSWORD", "DEVICE_UDID")
+    missing = [key for key in required if not os.environ.get(key)]
+    if missing:
+        raise ValueError("missing " + " ".join(missing))
+    return {
+        "APPLE_ID": os.environ["APPLE_ID"],
+        "APPLE_PASSWORD": os.environ["APPLE_PASSWORD"],
+        "DEVICE_UDID": os.environ["DEVICE_UDID"],
+        "IPA": os.environ.get("IPA", "/var/lib/momentum-resign/Momentum.ipa"),
+        "ALTSERVER": os.environ.get("ALTSERVER", "/usr/local/lib/momentum-resign/AltServer"),
+        "ANISETTE_URL": os.environ.get("ANISETTE_URL", "http://127.0.0.1:6969"),
+        "STATE": os.environ.get("STATE", "/var/lib/momentum-resign/state.json"),
+        "TWO_FA": os.environ.get("TWO_FA", "/var/lib/momentum-resign/2fa"),
+        "REFRESH_DAYS": os.environ.get("REFRESH_DAYS", "5"),
+    }
+
+
+def paired_iphone(document: dict) -> dict | None:
+    """Pick the physical iPhone from `devicectl list devices` JSON."""
+    devices = (document.get("result") or {}).get("devices") or document.get("devices") or []
+    fallback = None
+    for device in devices:
+        hardware = device.get("hardwareProperties") or {}
+        if hardware.get("reality") == "simulated":
+            continue
+        product = str(hardware.get("productType") or "")
+        if not product.startswith("iPhone"):
+            continue
+        phone = {
+            "name": str((device.get("deviceProperties") or {}).get("name") or ""),
+            "udid": str(hardware.get("udid") or ""),
+            "transport": str((device.get("connectionProperties") or {}).get("transportType") or ""),
+        }
+        if not phone["udid"]:
+            continue
+        if phone["transport"] in {"localNetwork", "wired"}:
+            return phone
+        fallback = phone
+    return fallback
 
 
 def redact(text: str, secret: str) -> str:
@@ -210,7 +269,20 @@ def install_ipa(settings: Settings) -> bool:
     return succeeded
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Re-sign Momentum onto the paired iPhone")
+    parser.add_argument("--write-env", action="store_true", help="write a systemd env file from the process environment")
+    parser.add_argument("--paired-udid", action="store_true", help="read devicectl JSON on stdin and print udid, name, transport")
+    args = parser.parse_args(argv)
+    if args.write_env:
+        sys.stdout.write(systemd_environment(env_values_from_environ()))
+        return 0
+    if args.paired_udid:
+        phone = paired_iphone(json.load(sys.stdin))
+        if phone is None:
+            return 1
+        print(f"{phone['udid']}\t{phone['name']}\t{phone['transport']}")
+        return 0
     settings = settings_from_env()
     now = datetime.now(timezone.utc)
     if not settings.configured:

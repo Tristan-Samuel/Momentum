@@ -160,6 +160,7 @@ Useful scripts:
 | `npm run preview`    | Serve the production bundle locally                            |
 | `npm run cap:sync`   | Build, then copy `dist/` into native projects (`npx cap sync`) |
 | `npm run ios:ipa`    | Mac only. Unsigned iPhone IPA at `build/Momentum.ipa` for the Pi |
+| `npm run ios:setup`  | Mac only. Install the Pi resign service and hand it the IPA, pairing, and Apple ID |
 
 
 The app does not call a server. After the first load, start a workout, log sets, and compute progression with no network.
@@ -267,35 +268,15 @@ To try the UI without a device, pick an iPhone simulator in Xcode and press Play
 
 The Pi cannot compile the app. It re-signs the last IPA from this Mac and installs that over the same bundle id, `com.momentum.workout`, so the icon and the on-device workouts stay. Do not delete the Momentum icon.
 
-On the Mac, in Finder, select the iPhone and turn on **Show this iPhone when on Wi-Fi**, then Apply. Build the IPA:
+With the iPhone unlocked on the same Wi-Fi as this Mac:
 
 ```bash
-npm run ios:ipa
-scp build/Momentum.ipa YOURUSER@pi5.local:/tmp/Momentum.ipa
+npm run ios:setup
 ```
 
-On the Pi, from `~/apps/momentum` after this repo is current:
+That builds the IPA, installs the Pi units, copies the Mac's pairing record (so the phone does not need a second Trust tap on the Pi), and asks in Mac dialogs for the Pi sudo password, the Apple ID password, and a verification code if Apple sends one. Reach a Pi that is not on `.local` with Tailscale, or set `MOMENTUM_PI=user@host`.
 
-```bash
-sudo bash deploy/ios-resign/install.sh
-sudo install -m 0644 /tmp/Momentum.ipa /var/lib/momentum-resign/Momentum.ipa
-```
-
-Edit `/etc/momentum-resign.env` (mode 600). Use the same Apple ID as the Xcode Personal Team, and the account password, not an app-specific password. Plug the phone into the Pi once, tap Trust, then:
-
-```bash
-sudo idevicepair pair
-sudo idevice_id -l
-```
-
-Put that id in `DEVICE_UDID` and unplug. If Apple asks for a code on the first install:
-
-```bash
-echo 123456 | sudo tee /var/lib/momentum-resign/2fa
-sudo systemctl start momentum-resign.service
-```
-
-A timer checks every 30 minutes. It installs again when the last success is at least 5 days old, the IPA is on disk, and the phone is unlocked on the home Wi-Fi. `journalctl -u momentum-resign -n 40 --no-pager` shows the last decision. Trust the cert once under **Settings → General → VPN & Device Management** if iOS asks. Later app changes are a new `npm run ios:ipa` and another copy to `/var/lib/momentum-resign/Momentum.ipa`.
+A timer then checks every 30 minutes. It installs again when the last success is at least 5 days old and the phone is unlocked on the home Wi-Fi. Run `npm run ios:setup` again after app changes. `journalctl -u momentum-resign -n 40 --no-pager` on the Pi shows the last decision. Trust the cert once under **Settings → General → VPN & Device Management** if iOS asks.
 
 The phone and the Pi have to share the home Wi-Fi so Bonjour can see the phone. The password sits in `/etc/momentum-resign.env` and is briefly visible in process arguments on the Pi. There is no Cloudflare hostname for this service.
 
@@ -372,7 +353,7 @@ npx cap run ios
 npx cap run android
 ```
 
-When A7 is already refreshing the phone, run `npm run ios:ipa` and copy `build/Momentum.ipa` to `/var/lib/momentum-resign/Momentum.ipa` on the Pi instead of another Xcode Run.
+When A7 is already refreshing the phone, run `npm run ios:setup` again instead of another Xcode Run.
 
 `cap:sync` rebuilds `dist/` and copies it into `ios/` and `android/`. Skipping it leaves the phone on the old bundle.
 

@@ -94,6 +94,12 @@ if [[ ! -x "$LIB/anisette-v3-server" || "$(cat "$rev_file" 2>/dev/null || true)"
 fi
 
 install -m 0755 "$HERE/resign.py" "$LIB/resign.py"
+install -m 0755 "$HERE/apply.sh" /usr/local/sbin/momentum-resign-apply
+if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+  printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/momentum-resign-apply\n' "$SUDO_USER" > /etc/sudoers.d/momentum-resign
+  chmod 0440 /etc/sudoers.d/momentum-resign
+  visudo -cf /etc/sudoers.d/momentum-resign
+fi
 install -m 0644 "$HERE/anisette.service" /etc/systemd/system/anisette.service
 install -m 0644 "$HERE/netmuxd.service" /etc/systemd/system/netmuxd.service
 install -m 0644 "$HERE/momentum-resign.service" /etc/systemd/system/momentum-resign.service
@@ -116,19 +122,7 @@ systemctl enable --now momentum-resign.timer
 
 cat <<'EOF'
 
-Units are in. This service stays on the LAN. Do not add a Cloudflare hostname for it.
-
-1. Edit /etc/momentum-resign.env (Apple ID, account password, and the phone UDID).
-2. On the Mac, turn on "Show this iPhone when on Wi-Fi" in Finder and apply.
-3. Plug the phone into the Pi, tap Trust, then:
-     sudo idevicepair pair
-     sudo idevice_id -l
-   Put that UDID in DEVICE_UDID. Unplug. Leave the phone unlocked on the home Wi-Fi.
-4. Copy build/Momentum.ipa from the Mac to /var/lib/momentum-resign/Momentum.ipa.
-5. If Apple asks for a code, write it and start one pass:
-     echo 123456 | sudo tee /var/lib/momentum-resign/2fa
-     sudo systemctl start momentum-resign.service
-   journalctl -u momentum-resign -n 40 --no-pager
-
+Units are in. From the Mac, `npm run ios:setup` copies the IPA, the Mac pairing record, and the Apple ID into place.
+This service stays on the LAN. Do not add a Cloudflare hostname for it.
 The Apple ID password is briefly visible in process arguments on this Pi.
 EOF
