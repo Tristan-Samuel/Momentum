@@ -100,14 +100,19 @@ if [[ "$REBUILD" == 1 || ! -f "$ROOT/build/Momentum.ipa" ]]; then
   npm run ios:ipa
 fi
 
-pi "mkdir -p ~/${PI_DIR}/deploy/ios-resign"
-pi "cd ~/${PI_DIR} && git pull --ff-only" || echo "git pull on the Pi did not fast-forward. The resign files from this Mac are copied anyway."
-copy_to_pi "$ROOT/deploy/ios-resign/"* "${SCP_TARGET}:~/${PI_DIR}/deploy/ios-resign/"
+# Earlier setups copied this directory into the app checkout. Those copies
+# match GitHub and are not Pi edits, but they make the tree dirty, and the
+# admin Update only fast-forwards a clean repo. Put the directory back.
+# App updates stay on that Update button.
+pi "cd ~/${PI_DIR} && { git checkout -- deploy/ios-resign || true; git clean -fd -- deploy/ios-resign || true; }" || true
+
+REMOTE_RESIGN=$(pi mktemp -d /tmp/momentum-resign-src.XXXXXX)
+copy_to_pi "$ROOT/deploy/ios-resign/"* "${SCP_TARGET}:${REMOTE_RESIGN}/"
 
 if ! pi sudo -n /usr/local/sbin/momentum-resign-apply configured >/dev/null 2>&1; then
-  PI_HOME=$(pi 'printf %s "$HOME"')
-  pi_root "bash ${PI_HOME}/${PI_DIR}/deploy/ios-resign/install.sh"
+  pi_root "bash ${REMOTE_RESIGN}/install.sh"
 fi
+pi "rm -rf ${REMOTE_RESIGN}"
 
 PHONE_JSON=$(xcrun devicectl list devices -j - 2>/dev/null || true)
 PHONE_LINE=$(printf '%s' "$PHONE_JSON" | python3 "$ROOT/deploy/ios-resign/resign.py" --paired-udid || true)
