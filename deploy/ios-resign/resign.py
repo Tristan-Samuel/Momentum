@@ -148,7 +148,7 @@ def env_values_from_environ() -> dict[str, str]:
         "DEVICE_UDID": os.environ["DEVICE_UDID"],
         "IPA": os.environ.get("IPA", "/var/lib/momentum-resign/Momentum.ipa"),
         "ALTSERVER": os.environ.get("ALTSERVER", "/usr/local/lib/momentum-resign/AltServer"),
-        "ANISETTE_URL": os.environ.get("ANISETTE_URL", "http://127.0.0.1:6969"),
+        "ANISETTE_URL": os.environ.get("ANISETTE_URL", "https://new.ani.sidestore.io"),
         "STATE": os.environ.get("STATE", "/var/lib/momentum-resign/state.json"),
         "TWO_FA": os.environ.get("TWO_FA", "/var/lib/momentum-resign/2fa"),
         "REFRESH_DAYS": os.environ.get("REFRESH_DAYS", "5"),
@@ -221,7 +221,7 @@ def settings_from_env(env: dict[str, str] | None = None) -> Settings:
         udid=source.get("DEVICE_UDID", "").strip(),
         ipa=Path(source.get("IPA", "/var/lib/momentum-resign/Momentum.ipa")),
         altserver=Path(source.get("ALTSERVER", "/usr/local/lib/momentum-resign/AltServer")),
-        anisette_url=source.get("ANISETTE_URL", "http://127.0.0.1:6969").strip(),
+        anisette_url=source.get("ANISETTE_URL", "https://new.ani.sidestore.io").strip(),
         state=Path(source.get("STATE", "/var/lib/momentum-resign/state.json")),
         two_fa=Path(source.get("TWO_FA", "/var/lib/momentum-resign/2fa")),
         force=Path(source.get("FORCE", "/var/lib/momentum-resign/force")),
@@ -294,6 +294,11 @@ def install_ipa(settings: Settings) -> bool:
     code = _read_two_fa(settings.two_fa)
     env = os.environ.copy()
     env["ALTSERVER_ANISETTE_SERVER"] = settings.anisette_url
+    env.setdefault("ALTSERVER_ANISETTE_PROTOCOL", "v3")
+    # systemd does not set HOME. AltServer keeps the Mac identity under XDG_CONFIG_HOME.
+    config_home = env.get("XDG_CONFIG_HOME") or "/var/lib/momentum-resign"
+    env["XDG_CONFIG_HOME"] = config_home
+    Path(config_home).mkdir(parents=True, exist_ok=True)
     command = [
         str(settings.altserver),
         "-u",

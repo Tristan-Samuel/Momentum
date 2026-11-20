@@ -44,8 +44,10 @@ ANISETTE_SRC=/usr/local/src/anisette-v3-server
 ANISETTE_REV=684895737aaf1a1c4586fcd5b67509ffd500a36c
 # NyaMisty v0.0.5 signs with a 2022 ldid that iOS 26 rejects. This build signs
 # a profile iOS 26.4+ will launch, and it can talk to netmuxd 0.3+.
-ALTSERVER_URL=https://github.com/jaakkopalvaila/AltServer-Linux/releases/download/ng-2026-09-13/AltServer-aarch64
-ALTSERVER_SHA=bbb6e30c1bf4c6cd1335345f79d1708d50f35be4e770f8ed36ec4696179f5518
+# ng-2026-09-13 still signs in with the local anisette server. Since 2026-10-21
+# Apple rejects that Android identity. ng-2026-11-05 provisions one Mac identity.
+ALTSERVER_URL=https://github.com/jaakkopalvaila/AltServer-Linux/releases/download/ng-2026-11-05/AltServer-aarch64
+ALTSERVER_SHA=f6651711241685809ba01c24c893a2fb3061e8973c81ceb6605f91050ae2cbd2
 NETMUXD_URL=https://github.com/jkcoxson/netmuxd/releases/download/v0.4.3/netmuxd-aarch64-unknown-linux-gnu.tar.gz
 NETMUXD_SHA=a89d587b094184b41431bc343da6dfa890391ccc7d4b3d6bce02b524f3191ae6
 

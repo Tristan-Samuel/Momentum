@@ -1,11 +1,13 @@
 [Unit]
 Description=Re-sign Momentum onto the paired iPhone
-After=network-online.target anisette.service netmuxd.service
-Wants=anisette.service netmuxd.service
+After=network-online.target netmuxd.service
+Wants=netmuxd.service
 
 [Service]
 Type=oneshot
-Environment=ALTSERVER_ANISETTE_SERVER=http://127.0.0.1:6969
+Environment=ALTSERVER_ANISETTE_SERVER=https://new.ani.sidestore.io
+Environment=ALTSERVER_ANISETTE_PROTOCOL=v3
+Environment=XDG_CONFIG_HOME=/var/lib/momentum-resign
 EnvironmentFile=-/etc/momentum-resign.env
 ExecStart=/usr/bin/python3 /usr/local/lib/momentum-resign/resign.py
 Nice=10

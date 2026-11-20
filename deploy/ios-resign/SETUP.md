@@ -39,6 +39,8 @@ Unlock the iPhone on the Pi's home Wi-Fi and leave it unlocked. The Pi is on `19
 
 The Pi checks every 30 minutes. It installs a new build, or a signature that is due, when it can see the phone. You can also tap **Update now** in the app. You do not run another command.
 
+Apple no longer accepts the Pi's own anisette server. Sign-in uses `https://new.ani.sidestore.io` for the Mac identity only. The Apple ID password still goes only to Apple, and the identity is stored on the Pi after the first sign-in.
+
 If iOS asks you to trust the developer again, use **Settings → General → VPN & Device Management**, then open Momentum.
 
 ## 4. After you change the app
