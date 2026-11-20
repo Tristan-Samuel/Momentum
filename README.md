@@ -18,6 +18,7 @@ This is not a social fitness app. It is a training instrument for one person. Th
 - Times isometric holds (planks, hangs) with a countdown, including a short switch between sides.
 - Shows a weekly streak, a 12-week calendar, volume, and how this session compared with the last one.
 - Exports and imports a JSON backup from Settings.
+- Exports a plain-text training log from Settings for pasting into ChatGPT or another model.
 - Resumes an incomplete workout if you leave mid-session.
 - Uploads each change to tssamuel.com after you sign in, and restores that copy in one tap.
 
@@ -34,7 +35,8 @@ This is not a social fitness app. It is a training instrument for one person. Th
 | History  | Past sessions grouped by month, and per-session detail                         |
 | Progress | Weekly volume, last-session comparison, trends, and personal records           |
 | Program  | Several programs: order, duplicate, and per-exercise steppers                  |
-| Settings | Account and sync, weekly goal, sound, appearance, JSON backup                  |
+| Coach    | Draft a program, edit one exercise, or read recent sessions                    |
+| Settings | Account and sync, weekly goal, sound, appearance, JSON backup, AI training log |
 
 
 ---
@@ -388,6 +390,8 @@ src/
   audio-engine/      Web Audio cues and sound profiles
   components/        Shell, buttons, charts, workout chrome
   database/          Dexie schema, repository, seed program, JSON backup
+  export/            Plain-text training log for another AI
+  coach/             Coach request, reply schema, apply
   hooks/             Settings, prepared workout, runner, resume
   platform/          Haptics, wake lock, notifications, files, sign-in
   progression/       Rep-range algorithm and apply helpers
@@ -419,6 +423,7 @@ Native folders after you add platforms:
 - Tables: programs, exercises, configurations, progression, sessions, sets, personal records, settings.
 - The phone is the source of truth. Settings → Sign in uploads changes to `https://momentum.tssamuel.com` and can restore that copy.
 - A JSON file from Settings → Export is the offline copy. Import replaces what is on the phone.
+- Settings → Export for an AI writes a text log of programs, workouts, and records. Paste that file into ChatGPT. It is not a backup, and Import will not read it.
 - Browser: clearing site data wipes history. Native: deleting the app wipes history.
 - Safari home-screen and the Capacitor app do **not** share storage. Treat them as two separate installs.
 
@@ -436,6 +441,8 @@ cd server && ../.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
 ```
 
 Production reads `/etc/momentum.env`. Copy `deploy/momentum.env.example`. Set `MOMENTUM_SECRET_KEY`, `LOGIN_CLIENT_SECRET`, and `MOMENTUM_ADMIN_EMAILS` (comma-separated tssamuel.com emails that may open `/admin`). Everyone else who signs in only sees `/me`.
+
+The coach sends the program and recent sessions to `POST /platform/gemini` on `LOGIN_TOKEN_URL` (login.tssamuel.com on the Pi, loopback only). The Gemini key stays in login. `GEMINI_API_KEY` in this env is used only when `LOGIN_CLIENT_SECRET` is empty. Login has to grant Momentum Gemini; that grant is on in current login.
 
 The iPhone sign-in sheet is `ios/App/App/WebAuthPlugin.swift`. The web app falls back to `/auth/callback`. Point the app at another server with `VITE_SYNC_URL` (default `https://momentum.tssamuel.com`).
 

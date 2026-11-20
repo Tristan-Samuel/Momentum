@@ -1,4 +1,4 @@
-"""Gemini coach. The phone sends the program and recent sessions; the key stays here."""
+"""Gemini coach. The phone sends the program and recent sessions; the key stays on tssamuel.com."""
 
 from __future__ import annotations
 

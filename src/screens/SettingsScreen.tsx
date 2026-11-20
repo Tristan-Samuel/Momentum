@@ -24,6 +24,7 @@ import {
 import { audioEngine } from '@/audio-engine/engine';
 import { TEST_CUES } from '@/audio-engine/profiles';
 import { haptics } from '@/platform/haptics';
+import { aiPromptFilename, buildAiPrompt } from '@/export/prompt';
 import { pickTextFile, shareTextFile } from '@/platform/files';
 import { requestNotificationPermission, sendTestNotification } from '@/platform/notifications';
 import { afterLocalReplace } from '@/sync/engine';
@@ -213,7 +214,8 @@ export function SettingsScreen() {
 
       <Group label="Backup">
         <p className="text-sm leading-relaxed text-[var(--muted)]">
-          Save everything (programs, workouts, records, settings) to a JSON file, or restore from one.
+          Save everything to a JSON file, restore from one, or export a training log you can paste
+          into ChatGPT and ask about your exercises.
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Button
@@ -247,6 +249,25 @@ export function SettingsScreen() {
             }}
           >
             <Icon name="download" size={18} /> Import
+          </Button>
+          <Button
+            variant="ghost"
+            className="col-span-2 flex items-center justify-center gap-2"
+            onClick={async () => {
+              try {
+                const envelope = await exportAll();
+                await shareTextFile(aiPromptFilename(), buildAiPrompt(envelope), {
+                  mime: 'text/plain',
+                  dialogTitle: 'Save training log',
+                });
+                setDataStatus('Training log ready. Paste it into ChatGPT, then ask your question.');
+              } catch (err) {
+                if (err instanceof Error && /cancel/i.test(err.message)) return;
+                setDataStatus('Could not export the training log.');
+              }
+            }}
+          >
+            <Icon name="upload" size={18} /> Export for an AI
           </Button>
         </div>
         {dataStatus ? <p className="mt-3 text-sm text-[var(--muted)]">{dataStatus}</p> : null}

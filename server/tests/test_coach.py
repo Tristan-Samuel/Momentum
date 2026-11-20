@@ -87,6 +87,72 @@ def test_edit_must_use_a_known_exercise(client, auth, app):
     assert response.get_json()["program"] is None
 
 
+def test_coach_uses_the_tssamuel_key(client, auth, app, monkeypatch):
+    app.config["GEMINI_API_KEY"] = ""
+    app.config["LOGIN_CLIENT_ID"] = "momentum"
+    app.config["LOGIN_CLIENT_SECRET"] = "secret"
+    app.config["LOGIN_TOKEN_URL"] = "http://127.0.0.1:5111"
+    app.config["GEMINI_MODEL"] = "gemini-2.5-flash"
+    sent = {}
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {
+                "text": json.dumps(
+                    {
+                        "summary": "Hold the pull-ups.",
+                        "recommendations": [{"exerciseConfigId": "cfg", "note": "Stay here."}],
+                    }
+                )
+            }
+
+    def post(url, json=None, headers=None, timeout=None):
+        sent["url"] = url
+        sent["json"] = json
+        sent["headers"] = headers
+        sent["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("momentum_server.platform.requests.post", post)
+    response = client.post(
+        "/api/coach",
+        headers=auth,
+        json={"task": "analyze", "note": "plateau?", "context": {"program": {"id": "p1", "exercises": [{"exerciseConfigId": "cfg"}]}}},
+    )
+    assert response.status_code == 200, response.data
+    assert response.get_json()["summary"] == "Hold the pull-ups."
+    assert sent["url"] == "http://127.0.0.1:5111/platform/gemini"
+    assert sent["json"]["model"] == "gemini-3.6-flash"
+    assert sent["json"]["client_secret"] == "secret"
+    assert sent["json"]["user_email"] == "dev@localhost"
+    assert "x-goog-api-key" not in sent["headers"]
+    assert "plateau?" in sent["json"]["contents"]
+
+
+def test_coach_reports_a_platform_refusal(client, auth, app, monkeypatch):
+    app.config["GEMINI_API_KEY"] = ""
+    app.config["LOGIN_CLIENT_ID"] = "momentum"
+    app.config["LOGIN_CLIENT_SECRET"] = "secret"
+    app.config["LOGIN_TOKEN_URL"] = "http://127.0.0.1:5111"
+
+    class Response:
+        status_code = 429
+
+        def json(self):
+            return {"error": "cap"}
+
+    monkeypatch.setattr("momentum_server.platform.requests.post", lambda *args, **kwargs: Response())
+    response = client.post(
+        "/api/coach",
+        headers=auth,
+        json={"task": "analyze", "note": "", "context": {"program": {"id": "p1"}}},
+    )
+    assert response.status_code == 429
+    assert "daily" in response.get_json()["error"]
+
+
 def test_unknown_edit_id_is_rejected():
     try:
         interpret(

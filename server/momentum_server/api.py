@@ -4,7 +4,7 @@ from functools import wraps
 
 from flask import Flask, current_app, g, jsonify, request
 
-from momentum_server import coach, store
+from momentum_server import coach, platform, store
 
 BACKUP_FORMAT = "momentum-backup"
 BACKUP_VERSION = 1
@@ -108,16 +108,21 @@ def register_api(app: Flask) -> None:
             return jsonify({"error": "Expected a JSON object."}), 400
         api_key = current_app.config.get("GEMINI_API_KEY", "")
         transport = current_app.config.get("GEMINI_TRANSPORT")
-        if not api_key and transport is None:
+        if not api_key and transport is None and not platform.platform_configured():
             return jsonify({"error": "Gemini is not configured on tssamuel.com yet."}), 503
 
         def complete(prompt: str) -> str:
             if transport is not None:
                 return transport(prompt)
+            if platform.platform_configured():
+                try:
+                    return platform.complete(prompt, user_email=str(g.api_user["email"] or ""))
+                except platform.PlatformError as exc:
+                    raise coach.CoachError(str(exc), exc.status) from exc
             return coach.complete_with_gemini(
                 prompt,
                 api_key=api_key,
-                model=current_app.config.get("GEMINI_MODEL") or "gemini-2.5-flash",
+                model=current_app.config.get("GEMINI_MODEL") or platform.DEFAULT_MODEL,
             )
 
         try:

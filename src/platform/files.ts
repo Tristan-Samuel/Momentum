@@ -7,7 +7,11 @@ async function isNative(): Promise<boolean> {
   }
 }
 
-export async function shareTextFile(filename: string, contents: string): Promise<void> {
+export async function shareTextFile(
+  filename: string,
+  contents: string,
+  options?: { mime?: string; dialogTitle?: string },
+): Promise<void> {
   if (await isNative()) {
     const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
     const { Share } = await import('@capacitor/share');
@@ -17,10 +21,14 @@ export async function shareTextFile(filename: string, contents: string): Promise
       directory: Directory.Cache,
       encoding: Encoding.UTF8,
     });
-    await Share.share({ title: filename, url: written.uri, dialogTitle: 'Save Momentum backup' });
+    await Share.share({
+      title: filename,
+      url: written.uri,
+      dialogTitle: options?.dialogTitle ?? 'Save Momentum backup',
+    });
     return;
   }
-  const blob = new Blob([contents], { type: 'application/json' });
+  const blob = new Blob([contents], { type: options?.mime ?? 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
