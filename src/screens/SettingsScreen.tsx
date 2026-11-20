@@ -28,7 +28,7 @@ import { aiPromptFilename, buildAiPrompt } from '@/export/prompt';
 import { pickTextFile, shareTextFile } from '@/platform/files';
 import { requestNotificationPermission, sendTestNotification } from '@/platform/notifications';
 import { afterLocalReplace } from '@/sync/engine';
-import type { SoundProfile, ThemePreference } from '@/types';
+import type { LoadUnit, SoundProfile, ThemePreference } from '@/types';
 
 export function SettingsScreen() {
   const settings = useSettings();
@@ -64,6 +64,20 @@ export function SettingsScreen() {
         />
         <p className="mt-2 text-sm text-[var(--muted)]">
           Hit it each week (Monday to Sunday) to grow your streak on Home.
+        </p>
+        <div className="mt-5">
+          <Segmented<LoadUnit>
+            label="Weight unit"
+            value={settings.weightUnit ?? 'lb'}
+            options={[
+              { value: 'lb', label: 'Pounds' },
+              { value: 'kg', label: 'Kilograms' },
+            ]}
+            onChange={(weightUnit) => void updateSettings({ weightUnit })}
+          />
+        </div>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Used when you add an exercise from the library. Each exercise keeps the unit it was added with.
         </p>
       </Group>
 

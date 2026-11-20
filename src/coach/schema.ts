@@ -1,5 +1,9 @@
 import type {
+  CueMode,
   Laterality,
+  LoadKind,
+  LoadPer,
+  LoadUnit,
   Measure,
   StartPosition,
   Tempo,
@@ -25,6 +29,12 @@ export type CoachExerciseDraft = {
   unilateralOrder: UnilateralOrder;
   resistanceLabel: string;
   progressionStep: number;
+  cueMode?: CueMode;
+  loadKind?: LoadKind;
+  load?: number | null;
+  loadUnit?: LoadUnit;
+  loadStep?: number;
+  loadPer?: LoadPer;
 };
 
 export type CoachEdit = {
@@ -45,6 +55,12 @@ export type CoachEdit = {
   resistanceLabel?: string;
   progressionStep?: number;
   targets?: number[];
+  cueMode?: CueMode;
+  loadKind?: LoadKind;
+  load?: number | null;
+  loadUnit?: LoadUnit;
+  loadStep?: number;
+  loadPer?: LoadPer;
 };
 
 export type CoachRecommendation = {
@@ -60,6 +76,31 @@ export type CoachReply = {
   edit: CoachEdit | null;
   recommendations: CoachRecommendation[];
 };
+
+function loadFields(row: Record<string, unknown>): {
+  cueMode?: CueMode;
+  loadKind?: LoadKind;
+  load?: number | null;
+  loadUnit?: LoadUnit;
+  loadStep?: number;
+  loadPer?: LoadPer;
+} {
+  const fields: ReturnType<typeof loadFields> = {};
+  if (row.cueMode === 'tempo' || row.cueMode === 'open') fields.cueMode = row.cueMode;
+  if (row.loadKind === 'bodyweight' || row.loadKind === 'added' || row.loadKind === 'external') {
+    fields.loadKind = row.loadKind;
+  }
+  if (row.load === null) fields.load = null;
+  if (typeof row.load === 'number' && Number.isFinite(row.load)) {
+    fields.load = Math.min(2000, Math.max(0, Math.round(row.load * 100) / 100));
+  }
+  if (row.loadUnit === 'lb' || row.loadUnit === 'kg') fields.loadUnit = row.loadUnit;
+  if (typeof row.loadStep === 'number' && row.loadStep > 0) {
+    fields.loadStep = Math.min(100, Math.round(row.loadStep * 100) / 100);
+  }
+  if (row.loadPer === 'total' || row.loadPer === 'side') fields.loadPer = row.loadPer;
+  return fields;
+}
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const number = typeof value === 'number' ? value : Number(value);
@@ -120,6 +161,7 @@ function exerciseOf(value: unknown): CoachExerciseDraft | null {
     unilateralOrder: laterality === 'bilateral' ? 'right-then-left' : unilateralOrder,
     resistanceLabel: text(row.resistanceLabel, 40, 'Bodyweight'),
     progressionStep: clamp(row.progressionStep, 1, hold ? 30 : 5, hold ? 5 : 1),
+    ...loadFields(row),
   };
 }
 
@@ -166,6 +208,7 @@ function editOf(value: unknown): CoachEdit | null {
   const resistance = text(row.resistanceLabel, 40);
   if (resistance) edit.resistanceLabel = resistance;
   if (row.progressionStep != null) edit.progressionStep = clamp(row.progressionStep, 1, 30, 1);
+  Object.assign(edit, loadFields(row));
   const targets = targetsOf(row.targets, measure);
   if (targets) edit.targets = targets;
   const keys = Object.keys(edit).filter((key) => key !== 'exerciseConfigId');
@@ -233,6 +276,8 @@ export function describeEdit(edit: CoachEdit): string[] {
   if (edit.restAfterSetSeconds != null) lines.push(`Rest ${edit.restAfterSetSeconds}s`);
   if (edit.transitionAfterExerciseSeconds != null) lines.push(`Transition ${edit.transitionAfterExerciseSeconds}s`);
   if (edit.resistanceLabel) lines.push(edit.resistanceLabel);
+  if (edit.cueMode) lines.push(edit.cueMode === 'open' ? 'Open set' : 'Tempo');
+  if (edit.load != null && edit.loadUnit) lines.push(`${edit.load} ${edit.loadUnit}`);
   if (edit.targets) lines.push(`Targets ${edit.targets.join(', ')}`);
   if (edit.laterality) lines.push(edit.laterality === 'unilateral' ? 'One side at a time' : 'Both sides');
   return lines;

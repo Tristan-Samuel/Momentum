@@ -125,6 +125,58 @@ describe('double progression', () => {
     expect(result.nextTargets).toEqual([10, 8]);
   });
 
+  it('raises the load and resets reps after the top of the range', () => {
+    const result = evaluateProgression({
+      ...base,
+      sets: 3,
+      minReps: 5,
+      maxReps: 8,
+      currentTargets: [8, 8, 8],
+      completedReps: [8, 8, 8],
+      resistanceLabel: '135 lb',
+      loadKind: 'external',
+      load: 135,
+      loadUnit: 'lb',
+      loadStep: 5,
+    });
+    expect(result.recommendation.type).toBe('increase');
+    expect(result.recommendation.suggestion).toBe('140 lb');
+    expect(result.recommendation.nextLoad?.load).toBe(140);
+    expect(result.nextTargets).toEqual([6, 6, 6]);
+  });
+
+  it('drops the load when the sets were too hard', () => {
+    const result = evaluateProgression({
+      ...base,
+      currentTargets: [8, 8],
+      completedReps: [8, 8],
+      rating: 'too_hard',
+      resistanceLabel: '60 kg',
+      loadKind: 'external',
+      load: 60,
+      loadUnit: 'kg',
+      loadStep: 2.5,
+    });
+    expect(result.recommendation.type).toBe('decrease');
+    expect(result.recommendation.nextLoad?.load).toBe(57.5);
+    expect(result.nextTargets).toEqual([8, 8]);
+  });
+
+  it('holds a load that cannot drop a full step', () => {
+    const result = evaluateProgression({
+      ...base,
+      currentTargets: [8, 8],
+      completedReps: [4, 4],
+      resistanceLabel: '5 lb',
+      loadKind: 'external',
+      load: 5,
+      loadUnit: 'lb',
+      loadStep: 5,
+    });
+    expect(result.recommendation.type).toBe('hold');
+    expect(result.nextTargets).toEqual([8, 8]);
+  });
+
   it('uses the weaker leg', () => {
     expect(weakerLegReps(7, 6)).toBe(6);
   });

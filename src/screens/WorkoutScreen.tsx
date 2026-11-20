@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Button } from '@/components/Button';
 import { ProgressBar } from '@/components/ProgressBar';
+import { Stepper } from '@/components/ui/Stepper';
 import { RingCountdown } from '@/components/RingCountdown';
 import { useWorkoutRunner, type WorkoutControls } from '@/hooks/useWorkoutRunner';
 import {
@@ -63,6 +64,9 @@ export function WorkoutScreen() {
             <h1 className="mt-2 text-3xl font-semibold leading-tight tracking-tight">
               {view.exerciseName}
             </h1>
+            {view.resistanceLabel ? (
+              <p className="mt-1 text-sm text-[var(--muted)]">{view.resistanceLabel}</p>
+            ) : null}
             {view.canRate && view.ratingExerciseName && view.ratingExerciseName !== view.exerciseName ? (
               <p className="mt-2 text-sm text-[var(--muted)]">
                 Next exercise. Rate {view.ratingExerciseName} below before it starts.
@@ -93,7 +97,7 @@ export function WorkoutScreen() {
             {view.actualTarget !== view.prescribedTarget ? (
               <span> (was {formatAmount(view.prescribedTarget, view.measure)})</span>
             ) : null}
-            {view.measure === 'reps' ? <span> · Tempo {view.tempoCompact}</span> : null}
+            {view.measure === 'reps' && !view.openSet ? <span> · Tempo {view.tempoCompact}</span> : null}
           </p>
         </div>
 
@@ -104,10 +108,18 @@ export function WorkoutScreen() {
         ) : null}
 
         <div className="flex flex-1 flex-col items-center justify-center py-6">
-          <PrimaryStage view={view} kind={kind} />
+          {kind === 'set_active' && view.openSet ? (
+            <OpenSetLogger
+              key={`${view.exerciseIndex}-${view.setIndex}`}
+              view={view}
+              onDone={controls.completeOpenSet}
+            />
+          ) : (
+            <PrimaryStage view={view} kind={kind} />
+          )}
         </div>
 
-        {kind === 'set_active' && view.measure === 'reps' ? (
+        {kind === 'set_active' && view.measure === 'reps' && !view.openSet ? (
           <div className="space-y-4">
             <TempoBar phase={view.phase} tempo={view.tempoCompact} startPosition={view.startPosition} />
             <ProgressBar
@@ -269,6 +281,43 @@ function GapLine({ gap }: { gap: NonNullable<WorkoutView['upcomingGap']> }) {
     <p className="text-center text-sm text-[var(--muted)]">
       Then {formatClock(gap.seconds)} {label}
     </p>
+  );
+}
+
+function OpenSetLogger({
+  view,
+  onDone,
+}: {
+  view: WorkoutView;
+  onDone: (reps: number, sides?: { left: number; right: number }) => void;
+}) {
+  const [reps, setReps] = useState(view.actualTarget);
+  const [left, setLeft] = useState(view.actualTarget);
+  const [right, setRight] = useState(view.actualTarget);
+  const unilateral = view.laterality === 'unilateral';
+  return (
+    <div className="w-full max-w-sm text-center">
+      <p className="text-xs tracking-[0.22em] text-[var(--muted)]">LOAD</p>
+      <p className="mt-2 text-5xl font-semibold tracking-tight">{view.resistanceLabel || 'Bodyweight'}</p>
+      <p className="mt-2 text-sm text-[var(--muted)]">Target {formatAmount(view.actualTarget, view.measure)}</p>
+      {unilateral ? (
+        <div className="mt-6 grid grid-cols-2 gap-3 text-left">
+          <Stepper label="Left" value={left} min={0} max={100} onChange={setLeft} />
+          <Stepper label="Right" value={right} min={0} max={100} onChange={setRight} />
+        </div>
+      ) : (
+        <div className="mt-6 text-left">
+          <Stepper label="Reps" value={reps} min={0} max={100} onChange={setReps} />
+        </div>
+      )}
+      <Button
+        variant="accent"
+        className="mt-6 w-full"
+        onClick={() => (unilateral ? onDone(Math.min(left, right), { left, right }) : onDone(reps))}
+      >
+        Set done
+      </Button>
+    </div>
   );
 }
 

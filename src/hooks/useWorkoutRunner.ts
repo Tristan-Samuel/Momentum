@@ -27,6 +27,7 @@ export type WorkoutControls = {
   addRep: () => void;
   removeRep: () => void;
   setTarget: (reps: number) => void;
+  completeOpenSet: (reps: number, sides?: { left: number; right: number }) => void;
   rate: (input: {
     difficultyRating: DifficultyRating | null;
     rir: number | null;
@@ -84,6 +85,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null, programId?: st
       addRep: () => engine.addRep(),
       removeRep: () => engine.removeRep(),
       setTarget: (reps) => engine.setTargetForCurrent(reps),
+      completeOpenSet: (reps, sides) => engine.completeOpenSet(reps, sides),
       rate: (input) => engine.rateCurrentExercise(input),
     });
 

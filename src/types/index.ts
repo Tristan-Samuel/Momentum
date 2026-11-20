@@ -14,6 +14,21 @@ export type StartPosition = 'top' | 'bottom';
 
 export type Laterality = 'bilateral' | 'unilateral';
 export type Measure = 'reps' | 'seconds';
+/** `tempo` follows the metronome. `open` waits until you log the reps. */
+export type CueMode = 'tempo' | 'open';
+/** `added` is extra load on a bodyweight movement. `external` is the weight you lift. */
+export type LoadKind = 'bodyweight' | 'added' | 'external';
+export type LoadUnit = 'lb' | 'kg';
+export type LoadPer = 'total' | 'side';
+
+export type LoadSpec = {
+  cueMode: CueMode;
+  loadKind: LoadKind;
+  load: number | null;
+  loadUnit: LoadUnit;
+  loadStep: number;
+  loadPer: LoadPer;
+};
 export type UnilateralOrder = 'right-then-left' | 'left-then-right' | 'alternating';
 export type ProgressionType = 'rep-range';
 export type DifficultyRating = 'too_easy' | 'good' | 'hard' | 'too_hard';
@@ -61,6 +76,12 @@ export type ExerciseConfiguration = {
   laterality: Laterality;
   unilateralOrder: UnilateralOrder;
   resistanceLabel: string;
+  cueMode?: CueMode;
+  loadKind?: LoadKind;
+  load?: number | null;
+  loadUnit?: LoadUnit;
+  loadStep?: number;
+  loadPer?: LoadPer;
   createdAt: string;
   updatedAt: string;
   syncStatus: SyncStatus;
@@ -70,6 +91,12 @@ export type ProgressionState = {
   id: string;
   exerciseId: string;
   resistanceLabel: string;
+  cueMode?: CueMode;
+  loadKind?: LoadKind;
+  load?: number | null;
+  loadUnit?: LoadUnit;
+  loadStep?: number;
+  loadPer?: LoadPer;
   currentTargets: number[];
   lastCompletedReps: number[];
   lastRir: number | null;
@@ -90,6 +117,8 @@ export type ProgressionState = {
 export type ResistanceRecommendation = {
   type: 'increase' | 'hold' | 'decrease';
   suggestion: string;
+  /** Set when the next session should use a different numeric load. */
+  nextLoad?: LoadSpec | null;
 };
 
 export type WorkoutSession = {
@@ -126,6 +155,12 @@ export type ExerciseConfigSnapshot = {
   laterality: Laterality;
   unilateralOrder: UnilateralOrder;
   resistanceLabel: string;
+  cueMode?: CueMode;
+  loadKind?: LoadKind;
+  load?: number | null;
+  loadUnit?: LoadUnit;
+  loadStep?: number;
+  loadPer?: LoadPer;
 };
 
 export type ExerciseSession = {
@@ -195,6 +230,7 @@ export type AppSettings = {
   weeklyGoal: number;
   defaultTransitionSeconds: number;
   defaultUnilateralOrder: UnilateralOrder;
+  weightUnit: LoadUnit;
   createdAt: string;
   updatedAt: string;
   syncStatus: SyncStatus;

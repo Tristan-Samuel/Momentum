@@ -15,7 +15,7 @@ const SECTIONS: Section[] = [
     title: 'How a workout runs',
     body: [
       'Home shows today’s sets and reps for each exercise. Start workout unlocks audio and begins a 3-2-1 countdown.',
-      'During a set, follow the metronome through Lower, Pause, Lift, and Hold. When the set ends, confirm or edit completed reps from Controls if you need to.',
+      'During a tempo set, follow the metronome through Lower, Pause, Lift, and Hold. An open set shows the load and waits: log the reps, then rest starts.',
       'After each exercise, rate how it felt (too easy / good / hard / too hard), RIR, and optional poor form. The line under the buttons says what that does to the next session. Each exercise starts with a blank rating.',
       'Rest is only the timer between sets of the same exercise. After the last set, transition is the only countdown before the next exercise. There is no extra rest there. Review repeats what the rating changed.',
     ],
@@ -42,8 +42,16 @@ const SECTIONS: Section[] = [
       'After each exercise, Momentum looks at completed reps, RIR, difficulty, and form.',
       'Hold the current resistance if the set was too hard, RIR was 0, form was poor, you missed the minimum, you reduced the target, or performance dropped sharply from last time.',
       'Add 1 rep to any set that hit its target, up to max reps.',
-      'Increase difficulty when every set hits max reps with acceptable effort, then reset targets toward the bottom of the range. On Review you can apply a suggested next resistance label (for example Bodyweight+).',
+      'With a numeric load, topping the range suggests the next load (current plus the load step) and resets the reps toward the bottom. Too hard, a missed minimum, or poor form can suggest one step lighter. On Review you apply it. Bodyweight still suggests a harder variation, such as +5 lb.',
       'Unilateral work (pistol squat) uses the weaker-leg rep count for progression.',
+    ],
+  },
+  {
+    title: 'Weights and the library',
+    body: [
+      'Program has a library of gym exercises and four ready-made programs: Full Body, Push, Pull, and Legs. Adding one copies it into your program. Later edits stay on your copy.',
+      'Barbell and machine compounds are open sets. Dumbbell accessories, curls, raises, and bodyweight stay on the tempo metronome. You can switch either way on the exercise.',
+      'Load is a number in pounds or kilograms, total or per side. The load step is what Review adds or removes. Settings chooses the unit for newly added exercises.',
     ],
   },
   {
@@ -54,7 +62,7 @@ const SECTIONS: Section[] = [
       'Review: post-workout summary and apply-progression prompt.',
       'History: past sessions and per-session detail. Delete a workout there if a log was a mistake.',
       'Progress: rep and resistance trends plus personal records.',
-      'Program: rename the program, edit exercises, sets, tempo, rest, laterality, and today’s targets.',
+      'Program: rename the program, edit exercises, sets, tempo, load, rest, laterality, today’s targets, and open the gym library.',
       'Settings: theme, sound, haptics, wake lock, notifications, accessibility, and reset all progress.',
     ],
   },

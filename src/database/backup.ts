@@ -1,7 +1,8 @@
 import { db } from '@/database/db';
 import { DEFAULT_SETTINGS } from '@/database/seed';
 import { withOutboxSuppressed } from '@/sync/outbox';
-import { SYNC_TABLES, type SyncTable } from '@/types';
+import { SYNC_TABLES, type LoadSpec, type SyncTable } from '@/types';
+import { resolveLoad } from '@/utils/load';
 
 export const BACKUP_FORMAT = 'momentum-backup';
 export const BACKUP_VERSION = 1;
@@ -69,12 +70,34 @@ function normalizeRow(table: SyncTable, row: Record<string, unknown>): Record<st
     case 'workoutPrograms':
       return { order: 0, ...row };
     case 'exerciseConfigurations':
-      return { measure: 'reps', progressionStep: row.measure === 'seconds' ? 5 : 1, ...row };
+      return {
+        measure: 'reps',
+        progressionStep: row.measure === 'seconds' ? 5 : 1,
+        ...loadDefaults(row),
+        ...row,
+      };
+    case 'progressionStates':
+      return { ...loadDefaults(row), ...row };
     case 'appSettings':
       return { ...DEFAULT_SETTINGS, ...row, id: 'app' };
     default:
       return row;
   }
+}
+
+function loadDefaults(row: Record<string, unknown>): LoadSpec {
+  return resolveLoad({
+    resistanceLabel: typeof row.resistanceLabel === 'string' ? row.resistanceLabel : undefined,
+    cueMode: row.cueMode === 'open' || row.cueMode === 'tempo' ? row.cueMode : undefined,
+    loadKind:
+      row.loadKind === 'bodyweight' || row.loadKind === 'added' || row.loadKind === 'external'
+        ? row.loadKind
+        : undefined,
+    load: typeof row.load === 'number' || row.load === null ? row.load : undefined,
+    loadUnit: row.loadUnit === 'kg' || row.loadUnit === 'lb' ? row.loadUnit : undefined,
+    loadStep: typeof row.loadStep === 'number' ? row.loadStep : undefined,
+    loadPer: row.loadPer === 'side' || row.loadPer === 'total' ? row.loadPer : undefined,
+  });
 }
 
 export async function importAll(envelope: BackupEnvelope): Promise<void> {

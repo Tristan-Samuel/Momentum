@@ -16,6 +16,8 @@ This is not a social fitness app. It is a training instrument for one person. Th
 - Stores programs, sessions, personal records, and settings in IndexedDB via Dexie. Works fully offline after the first load.
 - Keeps more than one program and suggests the next one in rotation. Home can start a different one.
 - Times isometric holds (planks, hangs) with a countdown, including a short switch between sides.
+- Runs loaded exercises two ways: tempo for accessories, or an open set where you log the reps and the rest timer follows.
+- Includes a gym library (squat, bench, curl, and the rest) and ready-made Full Body, Push, Pull, and Legs programs.
 - Shows a weekly streak, a 12-week calendar, volume, and how this session compared with the last one.
 - Exports and imports a JSON backup from Settings.
 - Exports a plain-text training log from Settings for pasting into ChatGPT or another model.
@@ -34,7 +36,7 @@ This is not a social fitness app. It is a training instrument for one person. Th
 | Review   | Post-workout summary, set deltas, and apply-progression prompt                 |
 | History  | Past sessions grouped by month, and per-session detail                         |
 | Progress | Weekly volume, last-session comparison, trends, and personal records           |
-| Program  | Several programs: order, duplicate, and per-exercise steppers                  |
+| Program  | Several programs: order, duplicate, per-exercise steppers, and the gym library |
 | Coach    | Draft a program, edit one exercise, or read recent sessions                    |
 | Settings | Account and sync, weekly goal, sound, appearance, JSON backup, AI training log |
 
@@ -60,13 +62,15 @@ Tempo is written `eccentric-bottom-concentric-top` in seconds: **lower, pause at
 
 You can rename the program, change any prescription, or add/remove exercises on the Program screen. Today’s targets can be edited there too.
 
+**Library** on the Program screen lists gym exercises with a preset for sets, rep range, rest, tempo, and starting load. Barbell and machine compounds are open sets: the app shows the load, you log the reps, then rest starts. Curls, raises, dumbbell accessories, and bodyweight stay on the tempo metronome. Switch either way on the exercise. Full Body, Push, Pull, and Legs add a whole program beside this one. Settings chooses pounds or kilograms for exercises you add after that; each exercise keeps its own unit. The load step is what Review adds or removes when you leave the rep range.
+
 ### Progression (rep-range)
 
 After each exercise, Momentum looks at completed reps, RIR, difficulty, and form:
 
 - **Hold** the current resistance if the set was too hard, RIR was 0, form was poor, you missed the minimum, you reduced the target, or performance dropped sharply from last time.
 - **Add 1 rep** to any set that hit its target, up to `maxReps`.
-- **Increase difficulty** when every set hits `maxReps` with acceptable effort, then reset targets toward the bottom of the range. On Review, you can apply a suggested next resistance label (for example `Bodyweight+`).
+- **Increase the load** when every set hits `maxReps` with acceptable effort and the exercise has a numeric load. Review offers the current load plus the load step (5 lb or 2.5 kg by default) and resets targets toward the bottom of the range. Too hard, a missed minimum, or poor form can offer one step less. Bodyweight with no number still suggests a harder label, such as `+5 lb`.
 
 Unilateral work (pistol squat) uses the weaker-leg rep count for progression.
 

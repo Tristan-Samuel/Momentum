@@ -68,6 +68,8 @@ Rules of the app:
 - startPosition "top" means the rep starts by lowering (push-ups, squats, dips).
 - Tempo is seconds: eccentric, bottomPause, concentric, topPause.
 - measure "seconds" is an isometric hold. measure "reps" is a tempo set.
+- cueMode "open" means the person logs the reps (barbell and machine compounds such as squat, bench, deadlift, row, overhead press). cueMode "tempo" keeps the metronome. Curls, raises, and bodyweight stay tempo.
+- load is the weight as a number. loadUnit is "lb" or "kg". loadKind is "bodyweight", "added" (a belt or vest), or "external" (a bar, dumbbell, or machine). loadPer is "total" or "side". loadStep is how much to add after the top of the rep range.
 - Use exerciseConfigId values from the context when you edit or recommend. Never invent an id.
 
 Task: {task}
@@ -172,7 +174,29 @@ def _exercise(value: Any) -> dict[str, Any] | None:
         "unilateralOrder": order,
         "resistanceLabel": _text(value.get("resistanceLabel"), 40, "Bodyweight"),
         "progressionStep": _clamp(value.get("progressionStep"), 1, 30 if hold else 5, 5 if hold else 1),
+        **_load_fields(value),
     }
+
+
+def _load_fields(value: dict[str, Any]) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if value.get("cueMode") in {"tempo", "open"}:
+        fields["cueMode"] = value["cueMode"]
+    if value.get("loadKind") in {"bodyweight", "added", "external"}:
+        fields["loadKind"] = value["loadKind"]
+    load = value.get("load")
+    if load is None and "load" in value:
+        fields["load"] = None
+    elif isinstance(load, (int, float)) and not isinstance(load, bool):
+        fields["load"] = round(max(0, min(2000, float(load))), 2)
+    if value.get("loadUnit") in {"lb", "kg"}:
+        fields["loadUnit"] = value["loadUnit"]
+    step = value.get("loadStep")
+    if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+        fields["loadStep"] = round(min(100, float(step)), 2)
+    if value.get("loadPer") in {"total", "side"}:
+        fields["loadPer"] = value["loadPer"]
+    return fields
 
 
 def _targets(value: Any) -> list[int] | None:
@@ -223,6 +247,7 @@ def _edit(value: Any, known: set[str]) -> dict[str, Any] | None:
     resistance = _text(value.get("resistanceLabel"), 40)
     if resistance:
         edit["resistanceLabel"] = resistance
+    edit.update(_load_fields(value))
     targets = _targets(value.get("targets"))
     if targets:
         edit["targets"] = targets

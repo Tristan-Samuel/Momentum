@@ -1,8 +1,10 @@
 import type {
   DifficultyRating,
   FormQuality,
+  LoadSpec,
   ResistanceRecommendation,
 } from '@/types';
+import { formatLoad, hasNumericLoad, resolveLoad, shiftLoad } from '@/utils/load';
 
 export type ProgressionInput = {
   sets: number;
@@ -19,6 +21,12 @@ export type ProgressionInput = {
   targetReduced: boolean;
   resistanceLabel: string;
   step?: number;
+  cueMode?: LoadSpec['cueMode'];
+  loadKind?: LoadSpec['loadKind'];
+  load?: number | null;
+  loadUnit?: LoadSpec['loadUnit'];
+  loadStep?: number;
+  loadPer?: LoadSpec['loadPer'];
 };
 
 export type ProgressionResult = {
@@ -83,6 +91,18 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
             : targetReduced
               ? 'Target was reduced'
               : 'Performance dropped from the previous workout';
+    const lighter = (tooHard || poorForm || failedMin) ? lighterLoad(input) : null;
+    if (lighter) {
+      return {
+        nextTargets: targets,
+        recommendation: {
+          type: 'decrease',
+          suggestion: formatLoad(lighter),
+          nextLoad: lighter,
+        },
+        holdReason: reason,
+      };
+    }
     return {
       nextTargets: targets,
       recommendation: { type: 'hold', suggestion: `Repeat ${resistanceLabel}` },
@@ -99,12 +119,15 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
   const rirInRange = rir === null || (rir >= targetRirMin && rir <= targetRirMax + 1);
 
   if (allAtMax && effortOk && rirInRange) {
+    const heavier = heavierLoad(input);
     return {
       nextTargets: resetTargets(sets, minReps, maxReps, step),
-      recommendation: {
-        type: 'increase',
-        suggestion: 'Increase difficulty, then reset toward the bottom of the range',
-      },
+      recommendation: heavier
+        ? { type: 'increase', suggestion: formatLoad(heavier), nextLoad: heavier }
+        : {
+            type: 'increase',
+            suggestion: 'Increase difficulty, then reset toward the bottom of the range',
+          },
       holdReason: null,
     };
   }
@@ -121,6 +144,25 @@ export function evaluateProgression(input: ProgressionInput): ProgressionResult 
     recommendation: { type: 'hold', suggestion: `Keep ${resistanceLabel}` },
     holdReason: null,
   };
+}
+
+function numericSpec(input: ProgressionInput): LoadSpec | null {
+  if (!hasNumericLoad(input)) return null;
+  const spec = resolveLoad(input);
+  if (spec.load == null) return null;
+  return spec;
+}
+
+function heavierLoad(input: ProgressionInput): LoadSpec | null {
+  const spec = numericSpec(input);
+  if (!spec || spec.load == null) return null;
+  return { ...spec, load: shiftLoad(spec.load, spec.loadStep) };
+}
+
+function lighterLoad(input: ProgressionInput): LoadSpec | null {
+  const spec = numericSpec(input);
+  if (!spec || spec.load == null || spec.load <= spec.loadStep) return null;
+  return { ...spec, load: shiftLoad(spec.load, -spec.loadStep) };
 }
 
 export function weakerLegReps(left: number | null, right: number | null): number {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -9,12 +9,18 @@ import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Segmented } from '@/components/ui/Segmented';
 import { Stepper } from '@/components/ui/Stepper';
 import { usePreparedWorkout } from '@/hooks/usePreparedWorkout';
+import { useSettings } from '@/hooks/useSettings';
 import * as repo from '@/database/repository';
+import { convertLoad, defaultLoadStep, labelForLoad, resolveLoad } from '@/utils/load';
 import { formatTodayPlan, targetsForExercise, unitSuffix } from '@/utils/prescription';
 import { formatTempo, startPositionOf } from '@/utils/tempo';
 import type {
+  CueMode,
   ExerciseConfiguration,
   Laterality,
+  LoadKind,
+  LoadPer,
+  LoadUnit,
   Measure,
   ProgramExercise,
   StartPosition,
@@ -23,8 +29,10 @@ import type {
 } from '@/types';
 
 export function ConfigureScreen() {
+  const location = useLocation();
+  const requestedId = (location.state as { programId?: string } | null)?.programId ?? null;
   const programs = useLiveQuery(() => repo.listPrograms(), []);
-  const [chosenId, setChosenId] = useState<string | null>(null);
+  const [chosenId, setChosenId] = useState<string | null>(requestedId);
   const selectedId =
     programs?.find((row) => row.id === chosenId)?.id ?? programs?.[0]?.id ?? null;
   const prepared = usePreparedWorkout(selectedId);
@@ -157,13 +165,17 @@ export function ConfigureScreen() {
       {adding ? (
         <AddExerciseForm programId={program.id} onDone={() => setAdding(false)} />
       ) : (
-        <Button
-          className="mt-4 flex w-full items-center justify-center gap-2"
-          variant="ghost"
-          onClick={() => setAdding(true)}
-        >
-          <Icon name="plus" size={18} /> Add exercise
-        </Button>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <Link
+            to={`/library?program=${program.id}`}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-[var(--line)] px-3 py-4 text-center text-lg"
+          >
+            <Icon name="plus" size={18} /> Library
+          </Link>
+          <Button className="flex items-center justify-center gap-2" variant="ghost" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={18} /> Custom
+          </Button>
+        </div>
       )}
       <Glossary />
       <ConfirmDialog
@@ -238,6 +250,7 @@ function ExerciseEditor({
   const hold = item.measure === 'seconds';
   const unit = hold ? 'sec' : undefined;
   const step = hold ? 5 : 1;
+  const load = resolveLoad(item);
 
   return (
     <section className="overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--panel)]">
@@ -315,13 +328,70 @@ function ExerciseEditor({
             />
           </div>
 
+          {!hold ? (
+            <div className="mt-4">
+              <Segmented<CueMode>
+                label="Cues"
+                value={load.cueMode}
+                options={[
+                  { value: 'tempo', label: 'Tempo' },
+                  { value: 'open', label: 'Open' },
+                ]}
+                onChange={(cueMode) => void patch({ cueMode })}
+              />
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                {load.cueMode === 'open'
+                  ? 'You lift at your own pace, log the reps, then rest starts.'
+                  : 'The metronome counts every rep.'}
+              </p>
+            </div>
+          ) : null}
+
+          <div className="mt-4">
+            <Segmented<LoadKind>
+              label="Load"
+              value={load.loadKind}
+              options={[
+                { value: 'bodyweight', label: 'Body' },
+                { value: 'added', label: 'Added' },
+                { value: 'external', label: 'Weight' },
+              ]}
+              onChange={(loadKind) => {
+                if (loadKind === 'bodyweight') {
+                  void patch({ loadKind, load: null, resistanceLabel: 'Bodyweight' });
+                  return;
+                }
+                const loadUnit = load.loadUnit;
+                void patch({
+                  loadKind,
+                  loadUnit,
+                  loadStep: load.loadStep || defaultLoadStep(loadUnit),
+                  loadPer: load.loadPer,
+                  load: load.load && load.load > 0 ? load.load : loadUnit === 'kg' ? 20 : 45,
+                });
+              }}
+            />
+          </div>
+
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Stepper label="Sets" value={item.sets} min={1} max={10} onChange={(sets) => void patch({ sets })} />
-            <TextField
-              label="Resistance"
-              value={item.resistanceLabel}
-              onChange={(resistanceLabel) => void patch({ resistanceLabel })}
-            />
+            {load.loadKind === 'bodyweight' ? (
+              <TextField
+                label="Variation"
+                value={item.resistanceLabel}
+                onChange={(resistanceLabel) => void patch({ resistanceLabel })}
+              />
+            ) : (
+              <Stepper
+                label={load.loadPer === 'side' ? 'Load / side' : 'Load'}
+                value={load.load ?? 0}
+                min={0}
+                max={load.loadUnit === 'kg' ? 500 : 1000}
+                step={load.loadStep}
+                suffix={load.loadUnit}
+                onChange={(value) => void patch({ load: Number(value.toFixed(2)) })}
+              />
+            )}
             <Stepper
               label={hold ? 'Shortest hold' : 'Min reps'}
               value={item.minReps}
@@ -380,7 +450,48 @@ function ExerciseEditor({
               suffix={hold ? 'sec' : 'rep'}
               onChange={(progressionStep) => void patch({ progressionStep })}
             />
+            {load.loadKind !== 'bodyweight' ? (
+              <Stepper
+                label="Load step"
+                value={load.loadStep}
+                min={load.loadUnit === 'kg' ? 1.25 : 2.5}
+                max={load.loadUnit === 'kg' ? 20 : 45}
+                step={load.loadUnit === 'kg' ? 1.25 : 2.5}
+                suffix={load.loadUnit}
+                onChange={(loadStep) => void patch({ loadStep: Number(loadStep.toFixed(2)) })}
+              />
+            ) : null}
           </div>
+
+          {load.loadKind !== 'bodyweight' ? (
+            <div className="mt-4 space-y-4">
+              <Segmented<LoadUnit>
+                label="Unit"
+                value={load.loadUnit}
+                options={[
+                  { value: 'lb', label: 'Pounds' },
+                  { value: 'kg', label: 'Kilograms' },
+                ]}
+                onChange={(loadUnit) => {
+                  if (loadUnit === load.loadUnit) return;
+                  void patch({
+                    loadUnit,
+                    load: load.load == null ? null : convertLoad(load.load, load.loadUnit, loadUnit),
+                    loadStep: convertLoad(load.loadStep, load.loadUnit, loadUnit),
+                  });
+                }}
+              />
+              <Segmented<LoadPer>
+                label="Load counts as"
+                value={load.loadPer}
+                options={[
+                  { value: 'total', label: 'Total' },
+                  { value: 'side', label: 'Per side' },
+                ]}
+                onChange={(loadPer) => void patch({ loadPer })}
+              />
+            </div>
+          ) : null}
 
           <SectionLabel className="mt-6">Today&apos;s targets</SectionLabel>
           <p className="mt-1 text-sm text-[var(--muted)]">
@@ -567,8 +678,12 @@ function Glossary() {
 }
 
 function AddExerciseForm({ programId, onDone }: { programId: string; onDone: () => void }) {
+  const settings = useSettings();
   const [name, setName] = useState('');
   const [measure, setMeasure] = useState<Measure>('reps');
+  const [cueMode, setCueMode] = useState<CueMode>('tempo');
+  const [loadKind, setLoadKind] = useState<LoadKind>('bodyweight');
+  const unit = settings?.weightUnit ?? 'lb';
   return (
     <Card
       as="div"
@@ -578,6 +693,16 @@ function AddExerciseForm({ programId, onDone }: { programId: string; onDone: () 
         onSubmit={(event) => {
           event.preventDefault();
           const hold = measure === 'seconds';
+          const kind = hold ? 'bodyweight' : loadKind;
+          const step = defaultLoadStep(unit);
+          const starting = kind === 'bodyweight' ? null : unit === 'kg' ? 20 : 45;
+          const spec = resolveLoad({
+            loadKind: kind,
+            load: starting,
+            loadUnit: unit,
+            loadStep: step,
+            cueMode: hold ? 'tempo' : cueMode,
+          });
           void repo
             .addExerciseToProgram(programId, {
               name: name.trim() || (hold ? 'New hold' : 'New exercise'),
@@ -591,24 +716,48 @@ function AddExerciseForm({ programId, onDone }: { programId: string; onDone: () 
               targetRirMax: 2,
               laterality: 'bilateral',
               unilateralOrder: 'right-then-left',
-              resistanceLabel: 'Bodyweight',
+              resistanceLabel: labelForLoad(spec),
               measure,
+              ...spec,
             })
             .then(onDone);
         }}
       >
         <SectionLabel>New exercise</SectionLabel>
         <TextField label="Name" value={name} onChange={setName} placeholder="e.g. Dips or Plank" />
-        <div className="mt-3">
+        <div className="mt-3 space-y-3">
           <Segmented<Measure>
             label="Measure"
             value={measure}
             options={[
-              { value: 'reps', label: 'Reps with tempo' },
+              { value: 'reps', label: 'Reps' },
               { value: 'seconds', label: 'Timed hold' },
             ]}
             onChange={setMeasure}
           />
+          {measure === 'reps' ? (
+            <>
+              <Segmented<CueMode>
+                label="Cues"
+                value={cueMode}
+                options={[
+                  { value: 'tempo', label: 'Tempo' },
+                  { value: 'open', label: 'Open' },
+                ]}
+                onChange={setCueMode}
+              />
+              <Segmented<LoadKind>
+                label="Load"
+                value={loadKind}
+                options={[
+                  { value: 'bodyweight', label: 'Body' },
+                  { value: 'added', label: 'Added' },
+                  { value: 'external', label: 'Weight' },
+                ]}
+                onChange={setLoadKind}
+              />
+            </>
+          ) : null}
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Button type="button" variant="ghost" onClick={onDone}>

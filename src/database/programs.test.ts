@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from '@/database/db';
+import { libraryExerciseById, libraryExerciseInput } from '@/library/catalog';
+import { LIBRARY_PROGRAMS, exercisesForProgram, libraryProgramIdsExist } from '@/library/programs';
 import {
+  addExerciseToProgram,
   createProgram,
   createWorkoutSession,
   deleteProgram,
@@ -25,6 +28,30 @@ async function completeSession(programId: string): Promise<void> {
 }
 
 describe('programs', () => {
+  it('adds the full-body library with an open barbell squat', async () => {
+    expect(libraryProgramIdsExist()).toBe(true);
+    const template = LIBRARY_PROGRAMS.find((item) => item.id === 'full-body');
+    expect(template).toBeTruthy();
+    const program = await createProgram(template?.name ?? 'Full Body');
+    for (const entry of exercisesForProgram(template!)) {
+      await addExerciseToProgram(program.id, libraryExerciseInput(entry, 'lb'));
+    }
+    const prepared = await getPreparedWorkout(program.id);
+    expect(prepared.exercises.map((item) => item.exercise.name)).toEqual([
+      'Back Squat',
+      'Bench Press',
+      'Barbell Row',
+      'Romanian Deadlift',
+    ]);
+    const squat = prepared.exercises[0];
+    expect(squat.cueMode).toBe('open');
+    expect(squat.load).toBe(45);
+    expect(squat.resistanceLabel).toBe('45 lb');
+    expect(libraryExerciseById('bench-press')?.cueMode).toBe('open');
+    expect(libraryExerciseInput(libraryExerciseById('dumbbell-curl')!, 'kg').load).toBe(7.5);
+    expect(libraryExerciseInput(libraryExerciseById('dumbbell-curl')!, 'kg').cueMode).toBe('tempo');
+  });
+
   it('rotates to the program after the last completed one', async () => {
     const first = (await listPrograms())[0];
     const second = await createProgram('Day B');

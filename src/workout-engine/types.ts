@@ -1,4 +1,5 @@
 import type {
+  CueMode,
   DifficultyRating,
   FormQuality,
   Measure,
@@ -45,6 +46,8 @@ export type EngineSnapshotV1 = {
   userPaused?: boolean;
   ratingIndex?: number | null;
   loggedReps?: number[][];
+  /** True while an open set is in progress, so resume does not treat it as a finished tempo set. */
+  openSet?: boolean;
 };
 
 export type WorkoutView = {
@@ -99,6 +102,8 @@ export type WorkoutView = {
   measure: Measure;
   holdRemaining: number;
   switchingSides: boolean;
+  cueMode: CueMode;
+  openSet: boolean;
 };
 
 export function parseSnapshot(json: string): EngineSnapshotV1 | null {

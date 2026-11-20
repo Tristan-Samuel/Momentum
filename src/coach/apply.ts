@@ -31,6 +31,12 @@ export async function applyExerciseEdit(edit: CoachEdit): Promise<void> {
   if (edit.unilateralOrder) patch.unilateralOrder = edit.unilateralOrder;
   if (edit.resistanceLabel) patch.resistanceLabel = edit.resistanceLabel;
   if (edit.progressionStep != null) patch.progressionStep = edit.progressionStep;
+  if (edit.cueMode) patch.cueMode = edit.cueMode;
+  if (edit.loadKind) patch.loadKind = edit.loadKind;
+  if (edit.load !== undefined) patch.load = edit.load;
+  if (edit.loadUnit) patch.loadUnit = edit.loadUnit;
+  if (edit.loadStep != null) patch.loadStep = edit.loadStep;
+  if (edit.loadPer) patch.loadPer = edit.loadPer;
   if (Object.keys(patch).length > 0) {
     await repo.updateExerciseConfiguration(config.id, patch);
   }

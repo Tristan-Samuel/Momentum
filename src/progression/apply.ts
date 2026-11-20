@@ -2,6 +2,7 @@ import type { PersonalRecord, ProgressionState, SetSession } from '@/types';
 import * as repo from '@/database/repository';
 import { evaluateProgression, weakerLegReps } from '@/progression/algorithm';
 import { createId, nowIso } from '@/utils/id';
+import { resolveLoad } from '@/utils/load';
 
 function setReps(set: SetSession): number {
   if (set.skipped) return 0;
@@ -43,6 +44,11 @@ export async function applyCompletedSessionProgression(sessionId: string): Promi
       targetReduced,
       resistanceLabel: progression.resistanceLabel,
       step: exercise.configSnapshot.progressionStep ?? 1,
+      ...resolveLoad({
+        ...exercise.configSnapshot,
+        ...progression,
+        resistanceLabel: progression.resistanceLabel,
+      }),
     });
 
     const bestThisWorkout = Math.max(0, ...completedReps);

@@ -29,6 +29,7 @@ import {
   type ScheduledCue,
 } from '@/timing-engine/cues';
 import type { Clock } from '@/timing-engine/clock';
+import { resolveLoad } from '@/utils/load';
 import { formatTempo, formatTempoDisplay, phaseAt, startPositionOf, tempoSeconds } from '@/utils/tempo';
 import { createId, nowIso } from '@/utils/id';
 import { weakerLegReps } from '@/progression/algorithm';
@@ -43,6 +44,7 @@ import { SNAPSHOT_VERSION } from '@/workout-engine/types';
 
 const SET_COMPLETE_SECONDS = 2;
 const EXERCISE_COMPLETE_SECONDS = 12;
+const OPEN_SET_SECONDS = 6 * 60 * 60;
 
 type AudioPort = Pick<AudioEngine, 'schedule' | 'cancel' | 'unlock'>;
 
@@ -156,7 +158,13 @@ export class WorkoutEngine {
       this.segmentStartedAt = now;
       return;
     }
-    this.enter(kind, now - Math.max(0, elapsed), snapshot.segmentDuration, true);
+    const resumed = prepared.exercises[snapshot.exerciseIndex];
+    const open =
+      kind === 'set_active' &&
+      resumed != null &&
+      isOpenSet(resumed) &&
+      (snapshot.openSet === true || resumed.cueMode === 'open');
+    this.enter(kind, now - (open ? 0 : Math.max(0, elapsed)), open ? OPEN_SET_SECONDS : snapshot.segmentDuration, true);
     if (wasPaused && (this.userPaused || !shouldCatchUpOnResume(kind))) {
       this.hold(this.userPaused);
     }
@@ -191,7 +199,10 @@ export class WorkoutEngine {
 
   sync(): WorkoutView {
     const now = this.clock();
+    const item = this.currentItem();
+    const openActive = this.kind === 'set_active' && item != null && isOpenSet(item);
     if (
+      !openActive &&
       this.kind !== 'idle' &&
       this.kind !== 'paused' &&
       this.kind !== 'workout_complete' &&
@@ -287,6 +298,23 @@ export class WorkoutEngine {
     this.emitSnapshot();
   }
 
+  completeOpenSet(reps: number, sides?: { left: number; right: number }): void {
+    const item = this.currentItem();
+    if (!item || !isOpenSet(item)) return;
+    const live = this.kind === 'paused' ? this.pausedKind : this.kind;
+    if (live !== 'set_active') return;
+    if (this.kind === 'paused') this.unpauseForControl();
+    const count = Math.max(0, Math.round(reps));
+    this.logCurrentSet({
+      skipped: false,
+      completedFromElapsed: false,
+      reps: count,
+      leftReps: sides ? Math.max(0, Math.round(sides.left)) : null,
+      rightReps: sides ? Math.max(0, Math.round(sides.right)) : null,
+    });
+    this.enter('set_complete', this.clock(), SET_COMPLETE_SECONDS);
+  }
+
   addRep(): void {
     this.adjustReps(1);
   }
@@ -360,6 +388,8 @@ export class WorkoutEngine {
       userPaused: this.userPaused,
       ratingIndex: this.ratingIndex,
       loggedReps: this.loggedReps.map((row) => row.slice()),
+      openSet: this.currentItem() != null && isOpenSet(this.currentItem()!) &&
+        (this.kind === 'set_active' || this.pausedKind === 'set_active'),
     };
   }
 
@@ -387,6 +417,7 @@ export class WorkoutEngine {
     let holdRemaining = 0;
     let switchingSides = false;
     const startPosition = startPositionOf(item.startPosition);
+    const openSet = isOpenSet(item);
 
     if (kind === 'pre_set_countdown') {
       countdown = Math.max(1, Math.ceil(this.segmentDuration - elapsed));
@@ -401,7 +432,7 @@ export class WorkoutEngine {
       side = progress.side;
       switchingSides = progress.switching;
       holdRemaining = progress.switching ? progress.switchRemaining : target - progress.secondsIntoSide;
-    } else if (kind === 'set_active') {
+    } else if (kind === 'set_active' && !openSet) {
       const progress = progressAt(Math.max(0, elapsed - SET_START_DELAY), item.tempo, plan);
       if (progress.slot) {
         currentRep = progress.slot.repOnSide;
@@ -512,6 +543,8 @@ export class WorkoutEngine {
       measure: item.measure ?? 'reps',
       holdRemaining,
       switchingSides,
+      cueMode: openSet ? 'open' : 'tempo',
+      openSet,
     };
   }
 
@@ -543,6 +576,11 @@ export class WorkoutEngine {
   private rebuildActiveSet(now: number): void {
     const item = this.currentItem();
     if (!item) return;
+    if (isOpenSet(item)) {
+      this.segmentDuration = OPEN_SET_SECONDS;
+      if (this.kind !== 'paused') this.rescheduleCurrent(now);
+      return;
+    }
     const elapsed = this.kind === 'paused' ? this.elapsedAtPause : now - this.segmentStartedAt;
     const duration = this.activeDuration(item, this.currentTarget());
     this.segmentDuration = duration;
@@ -705,6 +743,9 @@ export class WorkoutEngine {
     if (this.kind === 'pre_set_countdown') {
       return buildCountdownCues(start).cues.filter((cue) => cue.at >= now - 0.01);
     }
+    if (this.kind === 'set_active' && item && isOpenSet(item)) {
+      return [{ at: start, kind: 'start' as const }].filter((cue) => cue.at >= now - 0.01);
+    }
     if (this.kind === 'set_active' && item && isHold(item)) {
       const sides = holdSides(item.laterality, item.unilateralOrder);
       return buildHoldCues(this.currentTarget(), sides, start + SET_START_DELAY).filter(
@@ -737,6 +778,7 @@ export class WorkoutEngine {
   }
 
   private activeDuration(item: ProgramExercise, target: number): number {
+    if (isOpenSet(item)) return OPEN_SET_SECONDS;
     if (isHold(item)) {
       return SET_START_DELAY + holdDurationSeconds(target, holdSides(item.laterality, item.unilateralOrder));
     }
@@ -793,7 +835,13 @@ export class WorkoutEngine {
     };
   }
 
-  private logCurrentSet(input: { skipped: boolean; completedFromElapsed: boolean }): void {
+  private logCurrentSet(input: {
+    skipped: boolean;
+    completedFromElapsed: boolean;
+    reps?: number;
+    leftReps?: number | null;
+    rightReps?: number | null;
+  }): void {
     const item = this.currentItem();
     if (!item) return;
     const stamp = `${this.exerciseIndex}:${this.setIndex}`;
@@ -809,6 +857,14 @@ export class WorkoutEngine {
     let rightReps: number | null = item.laterality === 'unilateral' ? 0 : null;
     if (input.skipped) {
       completedReps = 0;
+    } else if (input.reps != null) {
+      if (item.laterality === 'unilateral') {
+        leftReps = input.leftReps ?? input.reps;
+        rightReps = input.rightReps ?? input.reps;
+        completedReps = weakerLegReps(leftReps, rightReps);
+      } else {
+        completedReps = Math.max(0, Math.round(input.reps));
+      }
     } else if (input.completedFromElapsed && isHold(item)) {
       completedReps = actual;
       if (item.laterality === 'unilateral') {
@@ -876,6 +932,11 @@ export class WorkoutEngine {
       laterality: item.laterality,
       unilateralOrder: item.unilateralOrder,
       resistanceLabel: item.progression.resistanceLabel,
+      ...resolveLoad({
+        ...item,
+        ...item.progression,
+        resistanceLabel: item.progression.resistanceLabel,
+      }),
     };
     const record: ExerciseSession = {
       id: this.exerciseSessionIds[index],
@@ -974,7 +1035,13 @@ function emptyView(engine: WorkoutEngine): WorkoutView {
     measure: 'reps',
     holdRemaining: 0,
     switchingSides: false,
+    cueMode: 'tempo',
+    openSet: false,
   };
+}
+
+function isOpenSet(item: ProgramExercise): boolean {
+  return item.cueMode === 'open' && item.measure !== 'seconds';
 }
 
 function isHold(item: ProgramExercise): boolean {

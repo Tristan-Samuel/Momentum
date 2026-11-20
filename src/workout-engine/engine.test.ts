@@ -299,4 +299,90 @@ describe('workout engine', () => {
     const finished = engine.drainEvents().filter((event) => event.type === 'workout_finished');
     expect(finished).toHaveLength(1);
   });
+
+  it('waits for logged reps on an open set', () => {
+    const clock = new ManualClock();
+    let wall = 1_000_000;
+    const workout = prepared();
+    const first = workout.exercises[0];
+    workout.exercises[0] = {
+      ...first,
+      cueMode: 'open',
+      loadKind: 'external',
+      load: 135,
+      loadUnit: 'lb',
+      loadStep: 5,
+      loadPer: 'total',
+      resistanceLabel: '135 lb',
+      progression: {
+        ...first.progression,
+        cueMode: 'open',
+        loadKind: 'external',
+        load: 135,
+        loadUnit: 'lb',
+        loadStep: 5,
+        loadPer: 'total',
+        resistanceLabel: '135 lb',
+      },
+    };
+    const engine = new WorkoutEngine({
+      clock,
+      audio: null,
+      nowWall: () => wall,
+      createId: () => 'open-id',
+      nowIso: () => '2026-09-07T00:00:00.000Z',
+    });
+    engine.start(workout, 'session-open');
+    clock.advance(3);
+    engine.sync();
+    expect(engine.getView().kind).toBe('set_active');
+    expect(engine.getView().openSet).toBe(true);
+    clock.advance(30 * 60);
+    wall += 30 * 60 * 1000;
+    engine.sync();
+    expect(engine.getView().kind).toBe('set_active');
+    engine.handleVisibilityHidden();
+    expect(engine.kind).toBe('paused');
+    wall += 60_000;
+    engine.handleVisibilityVisible();
+    expect(engine.getView().kind).toBe('paused');
+    expect(engine.getView().pausedKind).toBe('set_active');
+    engine.resume();
+    engine.completeOpenSet(5);
+    expect(engine.getView().kind).toBe('set_complete');
+    const logged = engine.drainEvents().filter((event) => event.type === 'set_session');
+    expect(logged.at(-1)?.record.completedReps).toBe(5);
+    clock.advance(2);
+    engine.sync();
+    expect(engine.getView().kind).toBe('resting');
+  });
+
+  it('logs the weaker side of an open unilateral set', () => {
+    const clock = new ManualClock();
+    const workout = prepared();
+    const pistol = workout.exercises[3];
+    workout.exercises = [
+      {
+        ...pistol,
+        order: 0,
+        cueMode: 'open',
+        progression: { ...pistol.progression, cueMode: 'open' },
+      },
+    ];
+    const engine = new WorkoutEngine({
+      clock,
+      audio: null,
+      nowWall: () => 1_000_000,
+      createId: () => 'uni-id',
+      nowIso: () => '2026-09-07T00:00:00.000Z',
+    });
+    engine.start(workout, 'session-uni');
+    clock.advance(3);
+    engine.sync();
+    engine.completeOpenSet(8, { left: 6, right: 8 });
+    const logged = engine.drainEvents().filter((event) => event.type === 'set_session');
+    expect(logged.at(-1)?.record.completedReps).toBe(6);
+    expect(logged.at(-1)?.record.leftReps).toBe(6);
+    expect(logged.at(-1)?.record.rightReps).toBe(8);
+  });
 });

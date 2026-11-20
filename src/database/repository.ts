@@ -26,6 +26,7 @@ import {
 import { weakerLegReps } from '@/progression/algorithm';
 import { queueDeletes } from '@/sync/outbox';
 import { createId, midpointTarget, nowIso } from '@/utils/id';
+import { labelForLoad, loadFromLabel, resolveLoad } from '@/utils/load';
 import { inferStartPosition, startPositionOf } from '@/utils/tempo';
 
 export async function ensureSeeded(): Promise<void> {
@@ -177,8 +178,20 @@ export async function duplicateProgram(programId: string): Promise<WorkoutProgra
         };
         const { exercise: _exercise, progression, ...config } = item;
         void _exercise;
+        const live = resolveLoad({
+          ...config,
+          cueMode: progression.cueMode ?? config.cueMode,
+          loadKind: progression.loadKind ?? config.loadKind,
+          load: progression.load !== undefined ? progression.load : config.load,
+          loadUnit: progression.loadUnit ?? config.loadUnit,
+          loadStep: progression.loadStep ?? config.loadStep,
+          loadPer: progression.loadPer ?? config.loadPer,
+          resistanceLabel: progression.resistanceLabel,
+        });
         const nextConfig: ExerciseConfiguration = {
           ...config,
+          ...live,
+          resistanceLabel: progression.resistanceLabel,
           id: createId(),
           programId: copy.id,
           exerciseId: exercise.id,
@@ -190,6 +203,7 @@ export async function duplicateProgram(programId: string): Promise<WorkoutProgra
         await db.exerciseConfigurations.add(nextConfig);
         await db.progressionStates.add({
           ...defaultProgression(nextConfig),
+          ...live,
           resistanceLabel: progression.resistanceLabel,
           currentTargets: progression.currentTargets.slice(),
           recommendedNextTargets: progression.currentTargets.slice(),
@@ -237,9 +251,26 @@ export async function updateExerciseConfiguration(
 ): Promise<void> {
   const current = await db.exerciseConfigurations.get(id);
   if (!current) return;
-  const next = { ...current, ...patch, id, updatedAt: nowIso(), syncStatus: 'local' as const };
+  const loadTouched =
+    patch.cueMode != null ||
+    patch.loadKind != null ||
+    patch.load !== undefined ||
+    patch.loadUnit != null ||
+    patch.loadStep != null ||
+    patch.loadPer != null;
+  const merged = { ...current, ...patch, id, updatedAt: nowIso(), syncStatus: 'local' as const };
+  const parsed =
+    patch.resistanceLabel && !loadTouched ? loadFromLabel(merged.resistanceLabel) : resolveLoad(merged);
+  const next: ExerciseConfiguration = {
+    ...merged,
+    ...(loadTouched || (patch.resistanceLabel && parsed.loadKind !== 'bodyweight') ? parsed : {}),
+    resistanceLabel:
+      loadTouched || (patch.resistanceLabel && parsed.loadKind !== 'bodyweight')
+        ? labelForLoad(parsed, merged.resistanceLabel)
+        : merged.resistanceLabel,
+  };
   await db.exerciseConfigurations.put(next);
-  if (patch.sets || patch.minReps || patch.maxReps || patch.resistanceLabel) {
+  if (patch.sets || patch.minReps || patch.maxReps || patch.resistanceLabel || loadTouched) {
     const progression = await db.progressionStates
       .where('exerciseId')
       .equals(current.exerciseId)
@@ -257,6 +288,12 @@ export async function updateExerciseConfiguration(
       await db.progressionStates.put({
         ...progression,
         resistanceLabel: next.resistanceLabel,
+        cueMode: next.cueMode,
+        loadKind: next.loadKind,
+        load: next.load,
+        loadUnit: next.loadUnit,
+        loadStep: next.loadStep,
+        loadPer: next.loadPer,
         currentTargets,
         recommendedNextTargets:
           progression.recommendedNextTargets.length === sets
@@ -285,9 +322,15 @@ export async function addExerciseToProgram(
     targetRirMax: number;
     laterality: ExerciseConfiguration['laterality'];
     unilateralOrder: ExerciseConfiguration['unilateralOrder'];
-    resistanceLabel: string;
+    resistanceLabel?: string;
     measure?: Measure;
     progressionStep?: number;
+    cueMode?: ExerciseConfiguration['cueMode'];
+    loadKind?: ExerciseConfiguration['loadKind'];
+    load?: number | null;
+    loadUnit?: ExerciseConfiguration['loadUnit'];
+    loadStep?: number;
+    loadPer?: ExerciseConfiguration['loadPer'];
   },
 ): Promise<void> {
   const stamp = nowIso();
@@ -300,6 +343,15 @@ export async function addExerciseToProgram(
     updatedAt: stamp,
     syncStatus: 'local',
   };
+  const load = resolveLoad({
+    resistanceLabel: input.resistanceLabel,
+    cueMode: input.cueMode,
+    loadKind: input.loadKind,
+    load: input.load,
+    loadUnit: input.loadUnit,
+    loadStep: input.loadStep,
+    loadPer: input.loadPer,
+  });
   const config: ExerciseConfiguration = {
     id: createId(),
     programId,
@@ -319,7 +371,8 @@ export async function addExerciseToProgram(
     progressionStep: input.progressionStep ?? (input.measure === 'seconds' ? 5 : 1),
     laterality: input.laterality,
     unilateralOrder: input.unilateralOrder,
-    resistanceLabel: input.resistanceLabel,
+    ...load,
+    resistanceLabel: labelForLoad(load, input.resistanceLabel ?? 'Bodyweight'),
     createdAt: stamp,
     updatedAt: stamp,
     syncStatus: 'local',
@@ -476,6 +529,11 @@ export async function upsertExerciseSession(input: {
       laterality: input.item.laterality,
       unilateralOrder: input.item.unilateralOrder,
       resistanceLabel: input.item.progression.resistanceLabel,
+      ...resolveLoad({
+        ...input.item,
+        ...input.item.progression,
+        resistanceLabel: input.item.progression.resistanceLabel,
+      }),
     },
     targetRepsPerSet: input.targetRepsPerSet,
     difficultyRating: existing?.difficultyRating ?? null,
@@ -730,14 +788,23 @@ export async function applyProgressionTargets(input: {
   exerciseId: string;
   currentTargets: number[];
   resistanceLabel: string;
+  load?: Partial<ExerciseConfiguration> | null;
 }): Promise<void> {
   const current = await getProgression(input.exerciseId);
   if (!current) return;
+  const spec = input.load
+    ? resolveLoad({ ...current, ...input.load, resistanceLabel: input.resistanceLabel })
+    : loadFromLabel(input.resistanceLabel);
+  const resistanceLabel = labelForLoad(spec, input.resistanceLabel);
+  const { cueMode: _ignoredCue, ...loadWithoutCue } = spec;
+  void _ignoredCue;
+  const loadFields = spec.loadKind === 'bodyweight' && !input.load ? {} : input.load ? spec : loadWithoutCue;
   await db.progressionStates.put({
     ...current,
+    ...loadFields,
     currentTargets: input.currentTargets,
     recommendedNextTargets: input.currentTargets,
-    resistanceLabel: input.resistanceLabel,
+    resistanceLabel,
     recommendedResistanceChange: null,
     updatedAt: nowIso(),
   });
@@ -748,7 +815,8 @@ export async function applyProgressionTargets(input: {
   await Promise.all(
     configs.map((config) =>
       db.exerciseConfigurations.update(config.id, {
-        resistanceLabel: input.resistanceLabel,
+        ...loadFields,
+        resistanceLabel,
         updatedAt: nowIso(),
       }),
     ),

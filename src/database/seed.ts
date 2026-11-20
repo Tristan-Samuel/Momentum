@@ -6,6 +6,7 @@ import type {
   WorkoutProgram,
 } from '@/types';
 import { midpointTarget } from '@/utils/id';
+import { resolveLoad } from '@/utils/load';
 
 export const PROGRAM_ID = 'program-minimalist-strength';
 export const SETTINGS_ID = 'app' as const;
@@ -158,10 +159,17 @@ export const DEFAULT_CONFIGS: ExerciseConfiguration[] = [
 
 export function defaultProgression(config: ExerciseConfiguration): ProgressionState {
   const currentTargets = targets(config.sets, config.minReps, config.maxReps);
+  const load = resolveLoad(config);
   return {
     id: `progression-${config.exerciseId}`,
     exerciseId: config.exerciseId,
     resistanceLabel: config.resistanceLabel,
+    cueMode: config.cueMode ?? load.cueMode,
+    loadKind: config.loadKind ?? load.loadKind,
+    load: config.load !== undefined ? config.load : load.load,
+    loadUnit: config.loadUnit ?? load.loadUnit,
+    loadStep: config.loadStep ?? load.loadStep,
+    loadPer: config.loadPer ?? load.loadPer,
     currentTargets,
     lastCompletedReps: [],
     lastRir: null,
@@ -195,6 +203,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   weeklyGoal: 3,
   defaultTransitionSeconds: 30,
   defaultUnilateralOrder: 'right-then-left',
+  weightUnit: 'lb',
   createdAt: STAMP,
   updatedAt: STAMP,
   syncStatus: 'local',

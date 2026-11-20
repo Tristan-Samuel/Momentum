@@ -11,6 +11,7 @@ import { HistoryDetailScreen } from '@/screens/HistoryDetailScreen';
 import { HistoryScreen } from '@/screens/HistoryScreen';
 import { ProgressScreen } from '@/screens/ProgressScreen';
 import { GuideScreen } from '@/screens/GuideScreen';
+import { LibraryScreen } from '@/screens/LibraryScreen';
 import { ReviewScreen } from '@/screens/ReviewScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { WorkoutScreen } from '@/screens/WorkoutScreen';
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/history/:id" element={<HistoryDetailScreen />} />
           <Route path="/progress" element={<ProgressScreen />} />
           <Route path="/configure" element={<ConfigureScreen />} />
+          <Route path="/library" element={<LibraryScreen />} />
           <Route path="/coach" element={<CoachScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/guide" element={<GuideScreen />} />

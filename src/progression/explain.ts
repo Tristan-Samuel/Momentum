@@ -1,4 +1,5 @@
 import type { DifficultyRating, FormQuality, Measure } from '@/types';
+import { formatLoad } from '@/utils/load';
 import { formatRepList } from '@/utils/prescription';
 import { evaluateProgression, type ProgressionInput } from '@/progression/algorithm';
 
@@ -27,7 +28,15 @@ export function explainProgression(
   }
 
   if (current.recommendation.type === 'increase') {
+    const nextLoad = current.recommendation.nextLoad;
+    if (nextLoad) {
+      return `Saved. You topped the range, so next time is ${formatLoad(nextLoad)} and the targets reset toward the bottom.`;
+    }
     return 'Saved. You topped the range, so next time gets harder and the targets reset toward the bottom.';
+  }
+
+  if (current.recommendation.type === 'decrease' && current.recommendation.nextLoad) {
+    return `Saved. ${current.holdReason}. Next time ${formatLoad(current.recommendation.nextLoad)} at ${next}.`;
   }
 
   if (held && next !== plain) {

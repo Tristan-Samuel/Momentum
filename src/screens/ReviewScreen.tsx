@@ -8,10 +8,11 @@ import { applyProgressionTargets } from '@/database/repository';
 import { useSessionDetail, useSessionInsights } from '@/hooks/useSessionInsights';
 import { explainProgression } from '@/progression/explain';
 import { weakerLegReps } from '@/progression/algorithm';
+import { formatLoad } from '@/utils/load';
 import { formatRepList, unitSuffix } from '@/utils/prescription';
 import { workingAmount } from '@/utils/stats';
 import { formatDuration } from '@/utils/time';
-import type { ExerciseSession, SetSession } from '@/types';
+import type { ExerciseSession, LoadSpec, ProgressionState, SetSession } from '@/types';
 
 export function ReviewScreen() {
   const { id } = useParams();
@@ -89,28 +90,29 @@ export function ReviewScreen() {
                 sameResistance={insight?.sameResistance ?? true}
               />
               <p className="mt-3 text-sm leading-relaxed">{sessionNote(exercise, sets, insight?.previous ?? [])}</p>
-              {progression?.recommendedResistanceChange?.type === 'increase' ? (
+              {progression && loadChange(progression) ? (
                 <div className="mt-4 rounded-2xl bg-[var(--accent-soft)] p-4">
-                  <SectionLabel>Level up</SectionLabel>
-                  <p className="mt-2">
-                    You topped the range. Make the movement harder (more weight, a tougher
-                    variation), then the targets reset toward the bottom of the range.
-                  </p>
+                  <SectionLabel>{loadChange(progression)?.kind === 'decrease' ? 'Lighten' : 'Level up'}</SectionLabel>
+                  <p className="mt-2">{loadChange(progression)?.body}</p>
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     After you apply: {formatRepList(progression.recommendedNextTargets, measure)}
+                    {loadChange(progression)?.label ? ` · ${loadChange(progression)?.label}` : ''}
                   </p>
                   <Button
                     variant="accent"
                     className="mt-4 w-full"
-                    onClick={() =>
+                    onClick={() => {
+                      const change = loadChange(progression);
+                      if (!change) return;
                       void applyProgressionTargets({
                         exerciseId: exercise.exerciseId,
                         currentTargets: progression.recommendedNextTargets,
-                        resistanceLabel: nextResistance(progression.resistanceLabel),
-                      })
-                    }
+                        resistanceLabel: change.label,
+                        load: change.load,
+                      });
+                    }}
                   >
-                    Apply {nextResistance(progression.resistanceLabel)}
+                    Apply {loadChange(progression)?.label}
                   </Button>
                 </div>
               ) : null}
@@ -163,6 +165,36 @@ function sessionNote(exercise: ExerciseSession, sets: SetSession[], previous: nu
     exercise.configSnapshot.measure,
     'review',
   );
+}
+
+function loadChange(progression: ProgressionState): {
+  kind: 'increase' | 'decrease';
+  label: string;
+  body: string;
+  load: LoadSpec | null;
+} | null {
+  const change = progression.recommendedResistanceChange;
+  if (!change || (change.type !== 'increase' && change.type !== 'decrease')) return null;
+  if (change.nextLoad) {
+    const label = formatLoad(change.nextLoad);
+    return {
+      kind: change.type,
+      label,
+      load: change.nextLoad,
+      body:
+        change.type === 'decrease'
+          ? `Take weight off to ${label} and keep the same targets.`
+          : `You topped the range. Next time is ${label}, and the targets reset toward the bottom of the range.`,
+    };
+  }
+  if (change.type !== 'increase') return null;
+  const label = nextResistance(progression.resistanceLabel);
+  return {
+    kind: 'increase',
+    label,
+    load: null,
+    body: 'You topped the range. Make the movement harder (more weight, a tougher variation), then the targets reset toward the bottom of the range.',
+  };
 }
 
 function nextResistance(current: string): string {
