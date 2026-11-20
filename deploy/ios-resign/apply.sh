@@ -8,7 +8,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 usage() {
-  echo "usage: momentum-resign-apply {configured|ipa|env|pairing|code|refresh} [path]" >&2
+  echo "usage: momentum-resign-apply {configured|ipa|env|pairing|code|refresh|program} [path]" >&2
   exit 2
 }
 
@@ -110,6 +110,19 @@ PY
   refresh)
     systemctl start momentum-resign.service
     journalctl -u momentum-resign -n 40 --no-pager
+    ;;
+  program)
+    [[ $# -eq 2 ]] || usage
+    dir=$(readlink -f "$2")
+    case "$dir" in
+      /tmp/*|/home/*) ;;
+      *)
+        echo "refusing $dir" >&2
+        exit 1
+        ;;
+    esac
+    [[ -d "$dir" && -f "$dir/install.sh" && -f "$dir/resign.py" && -f "$dir/trigger.py" ]] || usage
+    bash "$dir/install.sh" --units-only
     ;;
   *)
     usage

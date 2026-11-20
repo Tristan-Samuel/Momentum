@@ -109,7 +109,11 @@ pi "cd ~/${PI_DIR} && { git checkout -- deploy/ios-resign || true; git clean -fd
 REMOTE_RESIGN=$(pi mktemp -d /tmp/momentum-resign-src.XXXXXX)
 copy_to_pi "$ROOT/deploy/ios-resign/"* "${SCP_TARGET}:${REMOTE_RESIGN}/"
 
-if ! pi sudo -n /usr/local/sbin/momentum-resign-apply configured >/dev/null 2>&1; then
+if pi sudo -n /usr/local/sbin/momentum-resign-apply configured >/dev/null 2>&1; then
+  if ! pi sudo -n /usr/local/sbin/momentum-resign-apply program "$REMOTE_RESIGN"; then
+    pi_root "bash ${REMOTE_RESIGN}/install.sh --units-only"
+  fi
+else
   pi_root "bash ${REMOTE_RESIGN}/install.sh"
 fi
 pi "rm -rf ${REMOTE_RESIGN}"
@@ -171,4 +175,4 @@ if printf '%s' "$LOG" | grep -qi 'verification code\|two-factor\|two factor\|sec
   pi sudo -n /usr/local/sbin/momentum-resign-apply code "${REMOTE_WORK}/2fa"
 fi
 
-echo "Setup is on the Pi. Later refreshes run every 30 minutes while ${PHONE_NAME} is unlocked on the home Wi-Fi."
+echo "Setup is on the Pi. A new build installs when ${PHONE_NAME} is unlocked on the home Wi-Fi. Settings → Update now starts it immediately."

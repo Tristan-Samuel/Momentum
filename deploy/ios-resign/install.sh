@@ -14,6 +14,32 @@ fi
 HERE=$(cd "$(dirname "$0")" && pwd)
 LIB=/usr/local/lib/momentum-resign
 STATE=/var/lib/momentum-resign
+
+install_units() {
+  install -d -m 0755 "$LIB" "$STATE"
+  install -m 0755 "$HERE/resign.py" "$LIB/resign.py"
+  install -m 0755 "$HERE/trigger.py" "$LIB/trigger.py"
+  install -m 0755 "$HERE/apply.sh" /usr/local/sbin/momentum-resign-apply
+  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+    printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/momentum-resign-apply\n' "$SUDO_USER" > /etc/sudoers.d/momentum-resign
+    chmod 0440 /etc/sudoers.d/momentum-resign
+    visudo -cf /etc/sudoers.d/momentum-resign
+  fi
+  install -m 0644 "$HERE/anisette.service" /etc/systemd/system/anisette.service
+  install -m 0644 "$HERE/netmuxd.service" /etc/systemd/system/netmuxd.service
+  install -m 0644 "$HERE/momentum-resign.service" /etc/systemd/system/momentum-resign.service
+  install -m 0644 "$HERE/momentum-resign.timer" /etc/systemd/system/momentum-resign.timer
+  install -m 0644 "$HERE/momentum-update.service" /etc/systemd/system/momentum-update.service
+  systemctl daemon-reload
+  systemctl enable --now momentum-update.service
+  systemctl restart momentum-update.service
+}
+
+if [[ "${1:-}" == "--units-only" ]]; then
+  install_units
+  exit 0
+fi
+
 ANISETTE_SRC=/usr/local/src/anisette-v3-server
 ANISETTE_REV=684895737aaf1a1c4586fcd5b67509ffd500a36c
 # NyaMisty v0.0.5 signs with a 2022 ldid that iOS 26 rejects. This build signs
@@ -93,17 +119,7 @@ if [[ ! -x "$LIB/anisette-v3-server" || "$(cat "$rev_file" 2>/dev/null || true)"
   echo "$ANISETTE_REV" > "$rev_file"
 fi
 
-install -m 0755 "$HERE/resign.py" "$LIB/resign.py"
-install -m 0755 "$HERE/apply.sh" /usr/local/sbin/momentum-resign-apply
-if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-  printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/momentum-resign-apply\n' "$SUDO_USER" > /etc/sudoers.d/momentum-resign
-  chmod 0440 /etc/sudoers.d/momentum-resign
-  visudo -cf /etc/sudoers.d/momentum-resign
-fi
-install -m 0644 "$HERE/anisette.service" /etc/systemd/system/anisette.service
-install -m 0644 "$HERE/netmuxd.service" /etc/systemd/system/netmuxd.service
-install -m 0644 "$HERE/momentum-resign.service" /etc/systemd/system/momentum-resign.service
-install -m 0644 "$HERE/momentum-resign.timer" /etc/systemd/system/momentum-resign.timer
+install_units
 
 if [[ ! -f /etc/momentum-resign.env ]]; then
   install -m 0600 "$HERE/env.example" /etc/momentum-resign.env
@@ -119,6 +135,7 @@ systemctl enable --now avahi-daemon
 systemctl enable --now anisette.service
 systemctl enable --now netmuxd.service
 systemctl enable --now momentum-resign.timer
+systemctl enable --now momentum-update.service
 
 cat <<'EOF'
 

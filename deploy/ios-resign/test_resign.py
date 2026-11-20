@@ -53,6 +53,33 @@ class RefreshDecisionTest(unittest.TestCase):
         self.assertEqual(action, "wait")
         self.assertIn("locked", reason)
 
+    def test_installs_a_new_build_inside_the_refresh_window(self):
+        action, reason = decide(last_success=NOW - timedelta(hours=1), build_changed=True)
+        self.assertEqual(action, "install")
+        self.assertIn("new build", reason)
+
+    def test_installs_when_an_update_was_requested(self):
+        action, reason = decide(last_success=NOW - timedelta(hours=1), forced=True)
+        self.assertEqual(action, "install")
+        self.assertIn("requested", reason)
+
+    def test_a_request_still_waits_until_the_phone_is_unlocked(self):
+        action, reason = decide(last_success=NOW - timedelta(hours=1), forced=True, locked=True)
+        self.assertEqual(action, "wait")
+        self.assertIn("locked", reason)
+
+    def test_build_is_newer_ignores_a_missing_record(self):
+        self.assertFalse(resign.build_is_newer(10, None))
+        self.assertTrue(resign.build_is_newer(10, 8))
+        self.assertFalse(resign.build_is_newer(10, 10))
+
+    def test_state_remembers_the_installed_ipa_mtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            resign.write_state(path, NOW, 1234.5)
+            self.assertEqual(resign.load_last_success(path), NOW)
+            self.assertEqual(resign.load_ipa_mtime(path), 1234.5)
+
     def test_honors_a_shorter_refresh_interval(self):
         action, _reason = decide(
             last_success=NOW - timedelta(days=2),
@@ -137,6 +164,18 @@ class PairExportTest(unittest.TestCase):
         self.assertEqual(length, len(packet))
         self.assertEqual((version, message, tag), (1, 8, 1))
         self.assertEqual(plistlib.loads(packet[16:])["MessageType"], "ReadPairRecord")
+
+
+class UpdateTriggerTest(unittest.TestCase):
+    def test_refuses_public_and_tailscale_peers(self):
+        import trigger
+
+        self.assertTrue(trigger.peer_allowed("192.168.7.158"))
+        self.assertTrue(trigger.peer_allowed("::ffff:192.168.7.158"))
+        self.assertTrue(trigger.peer_allowed("127.0.0.1"))
+        self.assertFalse(trigger.peer_allowed("100.72.15.41"))
+        self.assertFalse(trigger.peer_allowed("8.8.8.8"))
+        self.assertFalse(trigger.peer_allowed("not-an-ip"))
 
 
 if __name__ == "__main__":

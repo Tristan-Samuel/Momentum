@@ -1,0 +1,12 @@
+[Unit]
+Description=Let the iPhone ask for an immediate Momentum install
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/momentum-resign/trigger.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

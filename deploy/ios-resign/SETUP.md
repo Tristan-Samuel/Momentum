@@ -37,7 +37,7 @@ Answer the dialogs:
 
 Unlock the iPhone on the Pi's home Wi-Fi and leave it unlocked. The Pi is on `192.168.7.x`. The phone has to be on that network. Tailscale does not count, and the Mac's Wi-Fi does not count when it is a different network.
 
-The Pi checks every 30 minutes and installs when it can see the phone. You do not run another command.
+The Pi checks every 30 minutes. It installs a new build, or a signature that is due, when it can see the phone. You can also tap **Update now** in the app. You do not run another command.
 
 If iOS asks you to trust the developer again, use **Settings → General → VPN & Device Management**, then open Momentum.
 
@@ -49,7 +49,7 @@ On the Mac, with the phone unlocked on the Mac's Wi-Fi:
 npm run ios:setup
 ```
 
-Then leave the phone unlocked on the Pi's home Wi-Fi so the new build can install.
+Then leave the phone unlocked on the Pi's home Wi-Fi so the new build can install. Or open Momentum, go to Settings, and tap **Update now**. The phone asks the Pi to install immediately. Keep it unlocked. Momentum closes when the new version is ready. If iOS asks to find devices on the local network, allow it and tap the button again.
 
 ## See the last attempt
 

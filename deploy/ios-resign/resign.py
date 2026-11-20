@@ -46,16 +46,22 @@ def refresh_decision(
     ipa_present: bool,
     locked: bool,
     refresh_after: timedelta = REFRESH_AFTER,
+    build_changed: bool = False,
+    forced: bool = False,
 ) -> tuple[str, str]:
     """Return ('install' | 'wait' | 'skip', reason)."""
-    if not due(last_success, now, refresh_after):
-        return "skip", "last install is still inside the refresh window"
     if not ipa_present:
         return "wait", "IPA is missing"
     if not device_present:
         return "wait", "iPhone is not visible on the home network"
     if locked:
         return "wait", "iPhone is locked"
+    if forced:
+        return "install", "an update was requested and the iPhone is unlocked"
+    if build_changed:
+        return "install", "a new build is waiting and the iPhone is unlocked"
+    if not due(last_success, now, refresh_after):
+        return "skip", "last install is still inside the refresh window"
     return "install", "refresh is due and the iPhone is unlocked"
 
 
@@ -75,12 +81,45 @@ def load_last_success(path: Path) -> datetime | None:
         return None
 
 
-def write_state(path: Path, when: datetime) -> None:
+def write_state(path: Path, when: datetime, ipa_mtime: float | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps({"last_success": when.astimezone(timezone.utc).isoformat()})
+    body: dict[str, object] = {"last_success": when.astimezone(timezone.utc).isoformat()}
+    if ipa_mtime is not None:
+        body["ipa_mtime"] = ipa_mtime
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(payload + "\n")
+    temporary.write_text(json.dumps(body) + "\n")
     temporary.replace(path)
+
+
+def load_ipa_mtime(path: Path) -> float | None:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("ipa_mtime")
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    return float(raw)
+
+
+def build_is_newer(current: float | None, recorded: float | None) -> bool:
+    if current is None or recorded is None:
+        return False
+    return current > recorded + 1
+
+
+def write_status(path: Path, action: str, reason: str, when: datetime | None = None) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = (when or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        payload = json.dumps({"action": action, "reason": reason, "at": stamp})
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(payload + "\n")
+        temporary.replace(path)
+    except OSError:
+        return
 
 
 _ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -156,6 +195,8 @@ class Settings:
     anisette_url: str
     state: Path
     two_fa: Path
+    force: Path
+    status: Path
     refresh_after: timedelta
     idevice_id: str
     ideviceinfo: str
@@ -183,6 +224,8 @@ def settings_from_env(env: dict[str, str] | None = None) -> Settings:
         anisette_url=source.get("ANISETTE_URL", "http://127.0.0.1:6969").strip(),
         state=Path(source.get("STATE", "/var/lib/momentum-resign/state.json")),
         two_fa=Path(source.get("TWO_FA", "/var/lib/momentum-resign/2fa")),
+        force=Path(source.get("FORCE", "/var/lib/momentum-resign/force")),
+        status=Path(source.get("STATUS", "/var/lib/momentum-resign/status.json")),
         refresh_after=refresh_after,
         idevice_id=idevice_id,
         ideviceinfo=ideviceinfo,
@@ -193,20 +236,34 @@ def _udids(text: str) -> set[str]:
     return {line.strip().lower() for line in text.splitlines() if line.strip()}
 
 
-def probe_device(settings: Settings) -> tuple[bool, bool]:
-    """Return (present, locked). A device that does not answer is absent."""
+def _listed_udids(binary: str, flag: str) -> set[str]:
     listed = subprocess.run(
-        [settings.idevice_id, "-l"],
+        [binary, flag],
         check=False,
         capture_output=True,
         text=True,
     )
-    if settings.udid.lower() not in _udids(listed.stdout or ""):
+    return _udids(listed.stdout or "")
+
+
+def probe_device(settings: Settings) -> tuple[bool, bool]:
+    """Return (present, locked). A device that does not answer is absent.
+
+    `idevice_id -l` lists USB only. The Pi reaches the phone over Wi-Fi, which
+    is `idevice_id -n`.
+    """
+    udid = settings.udid.lower()
+    on_usb = udid in _listed_udids(settings.idevice_id, "-l")
+    on_network = udid in _listed_udids(settings.idevice_id, "-n")
+    if not on_usb and not on_network:
         return False, False
     # DeviceName answers when the phone is unlocked. PasswordProtected as a
     # value only means a passcode is set, so it is the wrong lock signal.
+    info_command = [settings.ideviceinfo, "-u", settings.udid, "-k", "DeviceName"]
+    if on_network and not on_usb:
+        info_command.insert(1, "-n")
     info = subprocess.run(
-        [settings.ideviceinfo, "-u", settings.udid, "-k", "DeviceName"],
+        info_command,
         check=False,
         capture_output=True,
         text=True,
@@ -351,11 +408,14 @@ def main(argv: list[str] | None = None) -> int:
     if not settings.configured:
         print("momentum-resign: set APPLE_ID, APPLE_PASSWORD, and DEVICE_UDID in /etc/momentum-resign.env")
         return 0
+    forced = settings.force.is_file()
     try:
         present, locked = probe_device(settings)
     except OSError as error:
         print(f"momentum-resign: wait: {error}")
+        write_status(settings.status, "wait", str(error), now)
         return 0
+    current_mtime = settings.ipa.stat().st_mtime if settings.ipa.is_file() else None
     action, reason = refresh_decision(
         last_success=load_last_success(settings.state),
         now=now,
@@ -363,14 +423,22 @@ def main(argv: list[str] | None = None) -> int:
         ipa_present=settings.ipa.is_file(),
         locked=locked,
         refresh_after=settings.refresh_after,
+        build_changed=build_is_newer(current_mtime, load_ipa_mtime(settings.state)),
+        forced=forced,
     )
     print(f"momentum-resign: {action}: {reason}")
     if action != "install":
+        write_status(settings.status, action, reason, now)
         return 0
+    if forced:
+        settings.force.unlink(missing_ok=True)
+    write_status(settings.status, "installing", reason, now)
     if not install_ipa(settings):
         print("momentum-resign: install failed", file=sys.stderr)
+        write_status(settings.status, "failed", "install failed", now)
         return 1
-    write_state(settings.state, now)
+    write_state(settings.state, now, current_mtime)
+    write_status(settings.status, "installed", "installed", now)
     print("momentum-resign: installed")
     return 0
 
