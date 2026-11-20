@@ -1,10 +1,11 @@
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { db } from '@/database/db';
-import { exportAll } from '@/database/backup';
+import { exportAll, importAll, normalizeEnvelope } from '@/database/backup';
 import { onOutboxChange } from '@/sync/outbox';
+import { applyRemoteRecords } from '@/sync/merge';
 import { getAccount, isSignedIn, saveAccount } from '@/sync/auth';
-import { PUSH_BATCH, pushRecords, SyncHttpError, type PushRecord } from '@/sync/api';
+import { fetchChanges, fetchSnapshot, PUSH_BATCH, pushRecords, SyncHttpError, type PushRecord } from '@/sync/api';
 import { SYNC_TABLES, type OutboxEntry, type SyncTable } from '@/types';
 
 const DEBOUNCE_MS = 4000;
@@ -55,7 +56,7 @@ export async function buildRecords(entries: OutboxEntry[]): Promise<PushRecord[]
       records.push(
         row && entry.op === 'put'
           ? { table, id: entry.recordId, data: row }
-          : { table, id: entry.recordId, deleted: true },
+          : { table, id: entry.recordId, deleted: true, updatedAt: entry.queuedAt },
       );
     });
   }
@@ -79,6 +80,29 @@ async function recordFailure(err: unknown): Promise<void> {
   schedulePush(RETRY_MS);
 }
 
+async function pullPending(token: string): Promise<void> {
+  const account = await getAccount();
+  if (!account) return;
+  const page = await fetchChanges(token, account.lastPullAt);
+  if (!Array.isArray(page.records) || page.cursor == null) {
+    throw new SyncHttpError(502, 'Sync returned an incomplete change list.');
+  }
+  const cursor = String(page.cursor);
+  const epoch = typeof page.epoch === 'number' ? page.epoch : 0;
+  if (account.lastEpoch != null && epoch !== account.lastEpoch) {
+    const snapshot = await fetchSnapshot(token);
+    await importAll(normalizeEnvelope(snapshot.tables, snapshot.exportedAt));
+    await saveAccount({ lastPullAt: cursor, lastEpoch: epoch, lastError: null });
+    return;
+  }
+  await applyRemoteRecords(Array.isArray(page.records) ? page.records : []);
+  await saveAccount({ lastPullAt: cursor, lastEpoch: epoch });
+}
+
+async function rememberEpoch(epoch: number | undefined): Promise<void> {
+  if (typeof epoch === 'number') await saveAccount({ lastEpoch: epoch });
+}
+
 async function pushPending(): Promise<void> {
   if (paused) return;
   const account = await getAccount();
@@ -88,14 +112,19 @@ async function pushPending(): Promise<void> {
   }
   if (!account.initialSyncDone) return;
   try {
+    await pullPending(account.token);
+    let pushedAny = false;
     for (;;) {
       const entries = await db.outbox.orderBy('queuedAt').limit(PUSH_BATCH).toArray();
       if (entries.length === 0) break;
-      await pushRecords(account.token, await buildRecords(entries));
+      const pushed = await pushRecords(account.token, await buildRecords(entries));
       await removeSent(entries);
       await saveAccount({ lastPushAt: new Date().toISOString(), lastError: null });
+      await rememberEpoch(pushed.epoch);
+      pushedAny = true;
       if (paused) break;
     }
+    if (pushedAny && !paused) await pullPending(account.token);
   } catch (err) {
     await recordFailure(err);
   }
@@ -111,10 +140,12 @@ export function uploadEverything(): Promise<void> {
     const records: PushRecord[] = SYNC_TABLES.flatMap((table) =>
       envelope.tables[table].map((row) => ({ table, id: String(row.id), data: row })),
     );
+    let epoch: number | undefined;
     try {
       let offset = 0;
       do {
-        await pushRecords(account.token, records.slice(offset, offset + PUSH_BATCH), offset === 0);
+        const pushed = await pushRecords(account.token, records.slice(offset, offset + PUSH_BATCH), offset === 0);
+        epoch = pushed.epoch ?? epoch;
         offset += PUSH_BATCH;
       } while (offset < records.length);
     } catch (err) {
@@ -122,7 +153,12 @@ export function uploadEverything(): Promise<void> {
       throw err;
     }
     await db.outbox.where('queuedAt').below(startedAt).delete();
-    await saveAccount({ initialSyncDone: true, lastPushAt: new Date().toISOString(), lastError: null });
+    await saveAccount({
+      initialSyncDone: true,
+      lastPushAt: new Date().toISOString(),
+      lastError: null,
+      ...(epoch !== undefined ? { lastEpoch: epoch } : {}),
+    });
   });
 }
 

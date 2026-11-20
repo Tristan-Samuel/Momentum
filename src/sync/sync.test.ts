@@ -6,7 +6,8 @@ import { pkceChallenge, readCallback } from '@/platform/webAuth';
 import { sha256 } from '@/sync/sha256';
 import { getAccount, saveAccount } from '@/sync/auth';
 import { buildRecords, flushNow, uploadEverything } from '@/sync/engine';
-import { completeSignIn, restoreFromServer, signOut } from '@/sync/restore';
+import { applyRemoteRecords } from '@/sync/merge';
+import { completeSignIn, completeWebSignIn, restoreFromServer, signOut } from '@/sync/restore';
 import { outboxKey } from '@/sync/outbox';
 
 type Call = { url: string; method: string; body: unknown; auth: string | null };
@@ -79,8 +80,8 @@ describe('push engine', () => {
     ]);
     expect(records[0]).toMatchObject({ table: 'workoutPrograms', id: program.id, data: { name: 'Day B' } });
     expect(records.slice(1)).toEqual([
-      { table: 'exercises', id: 'gone', deleted: true },
-      { table: 'exercises', id: 'x', deleted: true },
+      { table: 'exercises', id: 'gone', deleted: true, updatedAt: 'a' },
+      { table: 'exercises', id: 'x', deleted: true, updatedAt: 'a' },
     ]);
   });
 
@@ -90,7 +91,10 @@ describe('push engine', () => {
     await settle();
     expect(await db.outbox.count()).toBeGreaterThan(0);
 
-    responder = () => ({ body: { accepted: 1, serverTime: 'now' } });
+    responder = (call) =>
+      call.url.includes('/api/sync/changes')
+        ? { body: { records: [], cursor: '0', epoch: 0 } }
+        : { body: { accepted: 1, serverTime: 'now', epoch: 0 } };
     await flushNow();
 
     const push = calls.find((call) => call.url.endsWith('/api/sync/push'));
@@ -190,6 +194,141 @@ describe('full upload and restore', () => {
     expect(await completeSignIn({ code: 'c', verifier: 'v', redirectUri: 'r' })).toBe('choose');
     expect((await getAccount())?.initialSyncDone).toBe(false);
     expect(calls.some((call) => call.url.endsWith('/api/sync/push'))).toBe(false);
+  });
+
+  it('applies a newer remote row, keeps an older one, and honors a delete', async () => {
+    const program = await createProgram('Local');
+    await db.workoutPrograms.update(program.id, { updatedAt: '2026-02-01T00:00:00.000Z', name: 'Local' });
+    await settle();
+    await db.outbox.clear();
+
+    await applyRemoteRecords([
+      {
+        table: 'workoutPrograms',
+        id: program.id,
+        data: { ...program, name: 'Old', updatedAt: '2026-01-01T00:00:00.000Z' },
+      },
+    ]);
+    expect((await db.workoutPrograms.get(program.id))?.name).toBe('Local');
+
+    await applyRemoteRecords([
+      {
+        table: 'workoutPrograms',
+        id: program.id,
+        data: { ...program, name: 'Remote', updatedAt: '2026-03-01T00:00:00.000Z' },
+      },
+    ]);
+    expect((await db.workoutPrograms.get(program.id))?.name).toBe('Remote');
+    expect(await db.outbox.count()).toBe(0);
+
+    await db.workoutPrograms.update(program.id, { name: 'Pending', updatedAt: '2026-04-01T00:00:00.000Z' });
+    await settle();
+    await applyRemoteRecords([
+      {
+        table: 'workoutPrograms',
+        id: program.id,
+        data: { ...program, name: 'Later', updatedAt: '2026-05-01T00:00:00.000Z' },
+      },
+    ]);
+    expect((await db.workoutPrograms.get(program.id))?.name).toBe('Pending');
+
+    await db.outbox.clear();
+    await applyRemoteRecords([{ table: 'workoutPrograms', id: program.id, deleted: true }]);
+    expect(await db.workoutPrograms.get(program.id)).toBeUndefined();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('pulls a newer row and does not upload it back', async () => {
+    await signedIn();
+    const program = await createProgram('Local');
+    await db.workoutPrograms.update(program.id, { updatedAt: '2026-01-01T00:00:00.000Z' });
+    await settle();
+    await db.outbox.clear();
+    responder = (call) => {
+      if (call.url.includes('/api/sync/changes')) {
+        return {
+          body: {
+            records: [
+              {
+                table: 'workoutPrograms',
+                id: program.id,
+                data: { ...program, name: 'From the website', updatedAt: '2026-04-01T00:00:00.000Z' },
+              },
+            ],
+            cursor: '4',
+            epoch: 0,
+          },
+        };
+      }
+      return { body: { accepted: 1, serverTime: 'now', epoch: 0 } };
+    };
+    await flushNow();
+    expect((await db.workoutPrograms.get(program.id))?.name).toBe('From the website');
+    expect(calls.some((call) => call.url.endsWith('/api/sync/push'))).toBe(false);
+    expect((await getAccount())?.lastPullAt).toBe('4');
+  });
+
+  it('replaces local data when the server epoch changes', async () => {
+    await signedIn();
+    await saveAccount({ lastEpoch: 1, lastPullAt: '3' });
+    const program = await createProgram('Local only');
+    await settle();
+    const snapshot = await exportAll();
+    responder = (call) => {
+      if (call.url.includes('/api/sync/changes')) return { body: { records: [], cursor: '9', epoch: 2 } };
+      if (call.url.endsWith('/api/sync/snapshot')) return { body: snapshot };
+      return { body: { accepted: 1, epoch: 2 } };
+    };
+    await db.workoutPrograms.update(program.id, { name: 'Edited locally' });
+    await settle();
+    await flushNow();
+    expect((await listPrograms()).some((row) => row.name === 'Edited locally')).toBe(false);
+    expect((await getAccount())?.lastEpoch).toBe(2);
+  });
+
+  it('restores a hosted browser that has no workouts of its own', async () => {
+    await createProgram('Server program');
+    const snapshot = await exportAll();
+    await Promise.all(db.tables.map((table) => table.clear()));
+    responder = (call) => {
+      if (call.url.endsWith('/api/web/token')) {
+        return { body: { token: 'web', user: { email: 'me@example.com', name: 'Me', isAdmin: false } } };
+      }
+      if (call.url.endsWith('/api/me')) return { body: { hasData: true } };
+      if (call.url.endsWith('/api/sync/snapshot')) return { body: snapshot };
+      return { body: { accepted: 1 } };
+    };
+    expect(await completeWebSignIn()).toBe('restored');
+    expect((await getAccount())?.token).toBe('web');
+    expect((await getAccount())?.initialSyncDone).toBe(true);
+    expect(calls.some((call) => call.url.endsWith('/api/sync/push'))).toBe(false);
+  });
+
+  it('asks when the browser already has workouts', async () => {
+    await db.workoutSessions.add({
+      id: 's1',
+      programId: 'p',
+      programNameSnapshot: 'P',
+      status: 'completed',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:00:00.000Z',
+      durationMs: 1,
+      engineSnapshot: null,
+      engineSnapshotAt: null,
+      totalSets: 1,
+      totalReps: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      syncStatus: 'local',
+    });
+    responder = (call) => {
+      if (call.url.endsWith('/api/web/token')) {
+        return { body: { token: 'web', user: { email: 'me@example.com', name: '', isAdmin: false } } };
+      }
+      return { body: { hasData: true } };
+    };
+    expect(await completeWebSignIn()).toBe('choose');
+    expect(calls.some((call) => call.url.includes('/api/sync/snapshot'))).toBe(false);
   });
 
   it('signs out by revoking the token and forgetting the account', async () => {

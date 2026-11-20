@@ -41,6 +41,7 @@ class Config:
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
     GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash").strip() or "gemini-3.6-flash"
     MAX_CONTENT_LENGTH = int(os.environ.get("MOMENTUM_MAX_UPLOAD_MB", "5")) * 1024 * 1024
+    MOMENTUM_WEB_DIST = os.environ.get("MOMENTUM_WEB_DIST", "").strip()
     PERMANENT_SESSION_LIFETIME = timedelta(days=30)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"

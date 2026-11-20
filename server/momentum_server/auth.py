@@ -108,6 +108,33 @@ def register_auth(app: Flask) -> None:
         joiner = "&" if "?" in flow["redirect_uri"] else "?"
         return redirect(f"{flow['redirect_uri']}{joiner}{urlencode({'code': code, 'state': flow['state']})}")
 
+    @app.post("/api/web/token")
+    def web_token():
+        """Mints a device token for the website from the signed-in session. Reuses it on later calls."""
+        user_id = session.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Sign in required."}), 401
+        user = store.get_user(int(user_id))
+        if user is None:
+            return jsonify({"error": "Sign in required."}), 401
+        existing = session.get("web_device_token")
+        if isinstance(existing, str) and store.device_token_active(user["id"], existing):
+            token = existing
+        else:
+            token = store.issue_device_token(user["id"], "Momentum website")
+            session["web_device_token"] = token
+            session.permanent = True
+        return jsonify(
+            {
+                "token": token,
+                "user": {
+                    "email": user["email"],
+                    "name": user["name"],
+                    "isAdmin": store.is_admin_email(user["email"]),
+                },
+            }
+        )
+
     @app.post("/api/app/token")
     def app_token():
         body = request.get_json(silent=True) or {}

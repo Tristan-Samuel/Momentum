@@ -7,8 +7,9 @@ const SECTIONS: Section[] = [
   {
     title: 'What this is',
     body: [
-      'Momentum is a local workout coach for one person on one device. Open it, press Start, and it runs the session: countdown, tempo metronome, rest, transitions, and the next recommended targets.',
-      'There is no account, no backend, and no cloud sync. Programs, sessions, records, and settings live only on this device.',
+      'Momentum is a workout coach for one person. Open it, press Start, and it runs the session: countdown, tempo metronome, rest, transitions, and the next recommended targets.',
+      'The phone keeps a copy and works offline. Sign in with your tssamuel.com account and that copy is backed up. The website at momentum.tssamuel.com and another phone on the same account share it. A change on one shows up on the other.',
+      'This is not a social app. Nobody else sees your training.',
     ],
   },
   {
@@ -57,13 +58,27 @@ const SECTIONS: Section[] = [
   {
     title: 'Screens',
     body: [
-      'Home: next workout card, last session, completed-workout count.',
+      'Home: today’s routine, the program it chose, last session, and the week streak.',
       'Workout: full-screen runner with countdown, set, rest, and transition.',
       'Review: post-workout summary and apply-progression prompt.',
       'History: past sessions and per-session detail. Delete a workout there if a log was a mistake.',
       'Progress: rep and resistance trends plus personal records.',
-      'Program: rename the program, edit exercises, sets, tempo, load, rest, laterality, today’s targets, and open the gym library.',
-      'Settings: theme, sound, haptics, wake lock, notifications, accessibility, and reset all progress.',
+      'Program: rename the program, edit exercises, sets, tempo, load, rest, laterality, today’s targets, and open the gym library. The same editor is on momentum.tssamuel.com after you sign in.',
+      'Coach: ask Gemini to draft a program, edit one exercise, or read recent sessions. Sign in first. The request goes through tssamuel.com, and the key stays there. The website has the same Coach.',
+      'Schedule: routines, days, and reminder times. Edits sync to the phone and the website.',
+      'Settings: account and sync, weekly goal, sound, haptics, wake lock, reminders, and reset all progress. On iPhone, Update now installs the latest build from the home server.',
+    ],
+  },
+  {
+    title: 'Routines and reminders',
+    body: [
+      'A routine is one schedule. You can have one, or a morning and a night, or more. Each has its own programs, its own rule, and its own time.',
+      'Rotation: any day. The next program is the one after your last session. A missed day is not made up.',
+      'Days: assign a program to each weekday. Monday stays Monday. Skipping Monday does not move Tuesday.',
+      'Shift: a repeating pattern, such as push, pull, legs, rest. Turn on “Shift when I skip” and a missed training day stays next until you do it. Leave it off and the calendar moves on.',
+      'Per week: no fixed days. Do it a set number of days. The next program comes from the rotation until that count is met. You can still train after that.',
+      'Home shows each routine that is on, in reminder-time order. A rest day says so, and you can train anyway.',
+      'Reminders ring on the iPhone app for the next week. They name the routine. The website edits the same times. A computer browser does not ring after you close the tab.',
     ],
   },
   {
@@ -84,8 +99,9 @@ const SECTIONS: Section[] = [
   {
     title: 'Privacy',
     body: [
-      'Everything is stored locally in this app. Nothing is uploaded. Clearing site data in a browser, or deleting the native app, wipes history.',
-      'Safari home-screen and the native app do not share storage. Treat them as two separate installs.',
+      'The phone keeps the working copy. Signing in uploads it to your tssamuel.com account so the website and your other devices can use it. It is still only your account.',
+      'Clearing site data, or deleting the app, removes that device. The account copy stays until you delete workouts from the app or replace the server copy from Settings.',
+      'Safari, the website, and the iPhone app do not share storage until you sign in on each one.',
     ],
   },
 ];

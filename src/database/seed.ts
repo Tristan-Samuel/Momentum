@@ -3,6 +3,7 @@ import type {
   Exercise,
   ExerciseConfiguration,
   ProgressionState,
+  Routine,
   WorkoutProgram,
 } from '@/types';
 import { midpointTarget } from '@/utils/id';
@@ -10,6 +11,7 @@ import { resolveLoad } from '@/utils/load';
 
 export const PROGRAM_ID = 'program-minimalist-strength';
 export const SETTINGS_ID = 'app' as const;
+export const ROUTINE_ID = 'routine-training';
 
 const STAMP = '2026-01-01T00:00:00.000Z';
 
@@ -184,6 +186,28 @@ export function defaultProgression(config: ExerciseConfiguration): ProgressionSt
     lifetimeSets: 0,
     createdAt: STAMP,
     updatedAt: STAMP,
+    syncStatus: 'local',
+  };
+}
+
+export function defaultRoutine(stamp = STAMP): Routine {
+  return {
+    id: ROUTINE_ID,
+    name: 'Training',
+    order: 0,
+    enabled: true,
+    mode: 'rotation',
+    programIds: [],
+    weekdays: [null, null, null, null, null, null, null],
+    shift: [],
+    anchorDate: '2026-01-01',
+    skipMissed: false,
+    weeklyCount: 3,
+    reminderEnabled: false,
+    reminderHour: 7,
+    reminderMinute: 30,
+    createdAt: stamp,
+    updatedAt: stamp,
     syncStatus: 'local',
   };
 }

@@ -6,7 +6,17 @@ export const PUSH_BATCH = 500;
 
 export type PushRecord =
   | { table: SyncTable; id: string; data: Record<string, unknown> }
+  | { table: SyncTable; id: string; deleted: true; updatedAt?: string };
+
+export type ChangeRecord =
+  | { table: SyncTable; id: string; data: Record<string, unknown> }
   | { table: SyncTable; id: string; deleted: true };
+
+export type ChangePage = {
+  records: ChangeRecord[];
+  cursor: string;
+  epoch: number;
+};
 
 export type RemoteAccount = {
   email: string;
@@ -27,12 +37,18 @@ export class SyncHttpError extends Error {
 
 async function request<T>(
   path: string,
-  { method = 'GET', token, body }: { method?: string; token?: string; body?: unknown } = {},
+  {
+    method = 'GET',
+    token,
+    body,
+    credentials,
+  }: { method?: string; token?: string; body?: unknown; credentials?: RequestCredentials } = {},
 ): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${SYNC_URL}${path}`, {
       method,
+      credentials,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -74,8 +90,17 @@ export function pushRecords(
   token: string,
   records: PushRecord[],
   reset = false,
-): Promise<{ accepted: number; serverTime: string }> {
+): Promise<{ accepted: number; serverTime: string; epoch?: number }> {
   return request('/api/sync/push', { method: 'POST', token, body: reset ? { reset, records } : { records } });
+}
+
+export function fetchChanges(token: string, since: string | null): Promise<ChangePage> {
+  const query = since ? `?since=${encodeURIComponent(since)}` : '';
+  return request(`/api/sync/changes${query}`, { token });
+}
+
+export function fetchWebToken(): Promise<{ token: string; user: { email: string; name: string; isAdmin: boolean } }> {
+  return request('/api/web/token', { method: 'POST', body: {}, credentials: 'include' });
 }
 
 export function fetchSnapshot(token: string): Promise<BackupEnvelope> {

@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/Icon';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { db } from '@/database/db';
 import { beginSignIn, SignInCancelled } from '@/platform/webAuth';
+import { isHostedApp } from '@/sync/hosted';
 import { fetchMe, SYNC_URL, type RemoteAccount } from '@/sync/api';
 import { isSignedIn, useSyncAccount } from '@/sync/auth';
 import { flushNow, uploadEverything } from '@/sync/engine';
@@ -65,6 +66,7 @@ export function AccountSection() {
   };
 
   const host = SYNC_URL.replace(/^https?:\/\//, '');
+  const device = isHostedApp() ? 'browser' : 'phone';
 
   return (
     <section className="mt-8">
@@ -87,12 +89,16 @@ export function AccountSection() {
               variant="accent"
               className="mt-4 w-full"
               disabled={busy !== null}
-              onClick={() =>
+              onClick={() => {
+                if (isHostedApp()) {
+                  window.location.assign('/login?next=/');
+                  return;
+                }
                 void run('sign-in', async () => {
                   const outcome = await completeSignIn(await beginSignIn());
                   return outcome === 'uploaded' ? 'Signed in. Everything is backed up.' : null;
-                })
-              }
+                });
+              }}
             >
               {busy === 'sign-in' ? 'Signing in…' : 'Sign in'}
             </Button>
@@ -116,14 +122,14 @@ export function AccountSection() {
                 disabled={busy !== null}
                 onClick={() => setConfirm('restore')}
               >
-                Restore to this phone
+                Restore to this {device}
               </Button>
               <Button
                 variant={localWorkouts === 0 ? 'ghost' : 'accent'}
                 disabled={busy !== null}
                 onClick={() => setConfirm('replace-server')}
               >
-                Keep this phone&apos;s data ({localWorkouts} workout{localWorkouts === 1 ? '' : 's'})
+                Keep this {device}&apos;s data ({localWorkouts} workout{localWorkouts === 1 ? '' : 's'})
               </Button>
               <button
                 type="button"
@@ -195,8 +201,8 @@ export function AccountSection() {
       <ConfirmDialog
         open={confirm === 'restore'}
         eyebrow="RESTORE"
-        title="Replace this phone's data?"
-        body={`Programs, workouts, and records on this phone are replaced with the copy on ${host}.`}
+        title={`Replace this ${device}'s data?`}
+        body={`Programs, workouts, and records on this ${device} are replaced with the copy on ${host}.`}
         confirmLabel="Restore"
         danger
         busy={busy === 'restore'}
@@ -212,8 +218,8 @@ export function AccountSection() {
         open={confirm === 'replace-server'}
         eyebrow="UPLOAD"
         title={`Replace the copy on ${host}?`}
-        body="The server copy is overwritten with this phone's programs, workouts, and records."
-        confirmLabel="Upload this phone"
+        body={`The server copy is overwritten with this ${device}'s programs, workouts, and records.`}
+        confirmLabel={`Upload this ${device}`}
         danger
         busy={busy === 'upload-all'}
         onCancel={() => setConfirm(null)}
@@ -228,7 +234,7 @@ export function AccountSection() {
         open={confirm === 'sign-out'}
         eyebrow="SIGN OUT"
         title="Stop syncing?"
-        body="Your data stays on this phone. Changes stop uploading until you sign in again."
+        body={`Your data stays on this ${device}. Changes stop uploading until you sign in again.`}
         confirmLabel="Sign out"
         busy={busy === 'sign-out'}
         onCancel={() => setConfirm(null)}

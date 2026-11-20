@@ -1,5 +1,7 @@
 const REST_NOTIFICATION_ID = 71001;
 const TEST_NOTIFICATION_ID = 71002;
+const REMINDER_ID_START = 72000;
+const REMINDER_ID_COUNT = 48;
 
 type LocalNotificationsPlugin = {
   checkPermissions: () => Promise<{ display: string }>;
@@ -66,6 +68,33 @@ export async function cancelNativeRestNotification(): Promise<void> {
   const plugin = await getPlugin();
   if (!plugin) return;
   await plugin.cancel({ notifications: [{ id: REST_NOTIFICATION_ID }] });
+}
+
+export async function scheduleRoutineReminders(
+  items: Array<{ title: string; body: string; at: Date }>,
+): Promise<void> {
+  const plugin = await getPlugin();
+  if (!plugin) return;
+  const ids = Array.from({ length: REMINDER_ID_COUNT }, (_, index) => ({ id: REMINDER_ID_START + index }));
+  const upcoming = items.filter((item) => item.at.getTime() > Date.now() + 1000).slice(0, REMINDER_ID_COUNT);
+  if (upcoming.length === 0) {
+    const current = await plugin.checkPermissions();
+    if (current.display !== 'granted') return;
+    await plugin.cancel({ notifications: ids });
+    return;
+  }
+  const allowed = await requestNativeNotificationPermission();
+  if (!allowed) return;
+  await plugin.cancel({ notifications: ids });
+  await plugin.schedule({
+    notifications: upcoming.map((item, index) => ({
+      id: REMINDER_ID_START + index,
+      title: item.title,
+      body: item.body,
+      schedule: { at: item.at },
+      sound: 'beep.wav',
+    })),
+  });
 }
 
 export async function scheduleNativeTestNotification(): Promise<boolean> {

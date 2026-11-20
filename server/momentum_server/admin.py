@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 
 from momentum_server import insights, store
+from momentum_server.web import send_app_index
 
 
 def register_admin(app: Flask) -> None:
@@ -54,6 +55,8 @@ def register_admin(app: Flask) -> None:
 
     @app.get("/")
     def home():
+        if (page := send_app_index()) is not None:
+            return page
         if g.user is None:
             return render_template("home.html")
         if store.is_admin_email(g.user["email"]):

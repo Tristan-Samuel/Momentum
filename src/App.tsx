@@ -13,8 +13,10 @@ import { ProgressScreen } from '@/screens/ProgressScreen';
 import { GuideScreen } from '@/screens/GuideScreen';
 import { LibraryScreen } from '@/screens/LibraryScreen';
 import { ReviewScreen } from '@/screens/ReviewScreen';
+import { ScheduleScreen } from '@/screens/ScheduleScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { WorkoutScreen } from '@/screens/WorkoutScreen';
+import { useRoutineReminders } from '@/hooks/useRoutineReminders';
 import { setSyncPaused } from '@/sync/engine';
 
 function ThemeBoot({ children }: { children: ReactNode }) {
@@ -24,6 +26,7 @@ function ThemeBoot({ children }: { children: ReactNode }) {
 
 function SyncPause() {
   const { pathname } = useLocation();
+  useRoutineReminders();
   useEffect(() => {
     setSyncPaused(pathname === '/workout');
   }, [pathname]);
@@ -44,6 +47,7 @@ export default function App() {
           <Route path="/library" element={<LibraryScreen />} />
           <Route path="/coach" element={<CoachScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="/schedule" element={<ScheduleScreen />} />
           <Route path="/guide" element={<GuideScreen />} />
           <Route path="/auth/callback" element={<AuthCallbackScreen />} />
         </Route>

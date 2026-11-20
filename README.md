@@ -2,7 +2,7 @@
 
 A local-first personal workout coach. Open the app, press **Start**, and let it run the session: countdown, tempo metronome, rest, transitions, and the next recommended targets.
 
-This is not a social fitness app. It is a training instrument for one person. The phone holds the data. Signing in with tssamuel.com uploads a copy you can restore on another phone and read at momentum.tssamuel.com.
+This is not a social fitness app. It is a training instrument for one person. The phone holds a copy and works offline. Signing in with tssamuel.com syncs that copy both ways: the iPhone app and momentum.tssamuel.com can edit programs, ask Gemini, and change routines, and the newer change wins.
 
 ---
 
@@ -14,7 +14,7 @@ This is not a social fitness app. It is a training instrument for one person. Th
 - Lets you log actual reps, skip a set, reduce the target mid-set, and rate difficulty / RIR / form.
 - Recommends the next session’s targets from a simple rep-range progression (hold, add a rep, or increase difficulty and reset toward the bottom of the range).
 - Stores programs, sessions, personal records, and settings in IndexedDB via Dexie. Works fully offline after the first load.
-- Keeps more than one program and suggests the next one in rotation. Home can start a different one.
+- Keeps more than one program. A routine decides what is next: rotation, set weekdays, a shifting pattern, or a number of days per week. Home can start a different one.
 - Times isometric holds (planks, hangs) with a countdown, including a short switch between sides.
 - Runs loaded exercises two ways: tempo for accessories, or an open set where you log the reps and the rest timer follows.
 - Includes a gym library (squat, bench, curl, and the rest) and ready-made Full Body, Push, Pull, and Legs programs.
@@ -22,7 +22,8 @@ This is not a social fitness app. It is a training instrument for one person. Th
 - Exports and imports a JSON backup from Settings.
 - Exports a plain-text training log from Settings for pasting into ChatGPT or another model.
 - Resumes an incomplete workout if you leave mid-session.
-- Uploads each change to tssamuel.com after you sign in, and restores that copy in one tap.
+- Syncs each change with tssamuel.com after you sign in. A newer edit from the website or another phone replaces the older one. Settings can still replace either side outright.
+- Reminds you on the iPhone at the time set on each routine. The website edits that time. A desktop browser does not ring after the tab closes.
 
 
 
@@ -31,13 +32,14 @@ This is not a social fitness app. It is a training instrument for one person. Th
 
 | Route    | Purpose                                                                        |
 | -------- | ------------------------------------------------------------------------------ |
-| Home     | Program picker, this week’s streak, next workout, last session                 |
+| Home     | Today’s routines, program picker, week streak, last session                    |
 | Workout  | Full-screen runner (countdown, tempo or timed hold, rest, transition)          |
 | Review   | Post-workout summary, set deltas, and apply-progression prompt                 |
 | History  | Past sessions grouped by month, and per-session detail                         |
 | Progress | Weekly volume, last-session comparison, trends, and personal records           |
 | Program  | Several programs: order, duplicate, per-exercise steppers, and the gym library |
 | Coach    | Draft a program, edit one exercise, or read recent sessions                    |
+| Schedule | Routines: rotation, weekdays, shift, days per week, reminder time              |
 | Settings | Account and sync, weekly goal, sound, appearance, JSON backup, AI training log |
 
 
@@ -347,7 +349,7 @@ npx cap run ios
 npx cap run android
 ```
 
-When A7 is already refreshing the phone, run `npm run ios:setup` again instead of another Xcode Run.
+When the Pi is already refreshing the phone, run `npm run ios:setup` again instead of another Xcode Run. That copies the new IPA to the Pi. The Pi installs it when the iPhone is unlocked on the home Wi-Fi. On the phone, Settings → **Update now** starts that install immediately.
 
 `cap:sync` rebuilds `dist/` and copies it into `ios/` and `android/`. Skipping it leaves the phone on the old bundle.
 
@@ -396,16 +398,17 @@ src/
   database/          Dexie schema, repository, seed program, JSON backup
   export/            Plain-text training log for another AI
   coach/             Coach request, reply schema, apply
-  hooks/             Settings, prepared workout, runner, resume
+  hooks/             Settings, prepared workout, runner, resume, reminders
   platform/          Haptics, wake lock, notifications, files, sign-in
   progression/       Rep-range algorithm and apply helpers
+  schedule/          Which program is due, and the next week of reminders
   screens/           Route-level UI
-  sync/              Outbox, push, restore, device token
+  sync/              Outbox, push, pull, restore, device token
   timing-engine/     Clock, cue list, scheduler, hold cues
   types/             Shared domain types
   utils/             Tempo, duration, ids, stats, streak, time
   workout-engine/    Session state machine and persistence
-server/              Flask sync API and admin pages
+server/              Flask sync API, admin pages, and the optional web app host
 deploy/              systemd unit, env example, Caddy snippet
 capacitor.config.ts  appId com.momentum.workout, webDir dist
 public/              PWA manifest and icon
@@ -424,12 +427,12 @@ Native folders after you add platforms:
 ## Data and privacy
 
 - Database name: `momentum` (IndexedDB).
-- Tables: programs, exercises, configurations, progression, sessions, sets, personal records, settings.
-- The phone is the source of truth. Settings → Sign in uploads changes to `https://momentum.tssamuel.com` and can restore that copy.
+- Tables: programs, exercises, configurations, progression, sessions, sets, personal records, settings, routines.
+- Sign in from Settings. Changes upload, and newer rows from the account download. Settings can still restore the server copy, or replace the server with this device.
 - A JSON file from Settings → Export is the offline copy. Import replaces what is on the phone.
 - Settings → Export for an AI writes a text log of programs, workouts, and records. Paste that file into ChatGPT. It is not a backup, and Import will not read it.
-- Browser: clearing site data wipes history. Native: deleting the app wipes history.
-- Safari home-screen and the Capacitor app do **not** share storage. Treat them as two separate installs.
+- Clearing site data, or deleting the app, removes that device. The account copy stays.
+- Safari, the website, and the iPhone app do not share storage until you sign in on each one.
 
 ### Sync server
 
@@ -444,7 +447,16 @@ cd server && ../.venv/bin/pytest
 cd server && ../.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
 ```
 
-Production reads `/etc/momentum.env`. Copy `deploy/momentum.env.example`. Set `MOMENTUM_SECRET_KEY`, `LOGIN_CLIENT_SECRET`, and `MOMENTUM_ADMIN_EMAILS` (comma-separated tssamuel.com emails that may open `/admin`). Everyone else who signs in only sees `/me`.
+Production reads `/etc/momentum.env`. Copy `deploy/momentum.env.example`. Set `MOMENTUM_SECRET_KEY`, `LOGIN_CLIENT_SECRET`, and `MOMENTUM_ADMIN_EMAILS` (comma-separated tssamuel.com emails that may open `/admin`). `/me` stays the read-only log.
+
+To serve the app on the site, build it and point the server at that folder:
+
+```bash
+npm run build
+# copy dist/ to the path below, then restart the momentum unit
+```
+
+`MOMENTUM_WEB_DIST` is that folder (see `deploy/momentum.env.example`). Unset, `/` stays the short sign-in page and the read-only log. Set, `/`, Program, Coach, Schedule, and the other app routes serve `index.html`. `/api`, `/login`, `/admin`, and `/me` stay on Flask. A signed-in browser gets a device token from `POST /api/web/token`. The iPhone app still uses its sign-in sheet.
 
 The coach sends the program and recent sessions to `POST /platform/gemini` on `LOGIN_TOKEN_URL` (login.tssamuel.com on the Pi, loopback only). The Gemini key stays in login. `GEMINI_API_KEY` in this env is used only when `LOGIN_CLIENT_SECRET` is empty. Login has to grant Momentum Gemini; that grant is on in current login.
 

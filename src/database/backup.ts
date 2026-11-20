@@ -1,5 +1,5 @@
 import { db } from '@/database/db';
-import { DEFAULT_SETTINGS } from '@/database/seed';
+import { DEFAULT_SETTINGS, defaultRoutine } from '@/database/seed';
 import { withOutboxSuppressed } from '@/sync/outbox';
 import { SYNC_TABLES, type LoadSpec, type SyncTable } from '@/types';
 import { resolveLoad } from '@/utils/load';
@@ -61,6 +61,9 @@ export function normalizeEnvelope(
   }
   if (tables.workoutPrograms.length === 0) {
     throw new BackupError('This backup has no programs in it.');
+  }
+  if (tables.routines.length === 0) {
+    tables.routines = [defaultRoutine() as unknown as Record<string, unknown>];
   }
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt, tables };
 }

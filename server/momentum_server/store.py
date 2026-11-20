@@ -19,6 +19,7 @@ SYNC_TABLES = (
     "setSessions",
     "personalRecords",
     "appSettings",
+    "routines",
 )
 
 SCHEMA = """
@@ -30,7 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL DEFAULT 'user',
     created_at TEXT NOT NULL,
     last_login_at TEXT,
-    last_sync_at TEXT
+    last_sync_at TEXT,
+    sync_epoch INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS users_email ON users(email);
 CREATE TABLE IF NOT EXISTS device_tokens (
@@ -57,6 +59,7 @@ CREATE TABLE IF NOT EXISTS records (
     updated_at TEXT NOT NULL,
     deleted INTEGER NOT NULL DEFAULT 0,
     data TEXT,
+    rev INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, tbl, id)
 );
 """
@@ -78,9 +81,21 @@ def init_db(path: str) -> None:
     conn = sqlite3.connect(path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Adds columns that CREATE TABLE IF NOT EXISTS will not add to an existing file."""
+    user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "sync_epoch" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN sync_epoch INTEGER NOT NULL DEFAULT 0")
+    record_cols = {row[1] for row in conn.execute("PRAGMA table_info(records)")}
+    if "rev" not in record_cols:
+        conn.execute("ALTER TABLE records ADD COLUMN rev INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE records SET rev = rowid WHERE rev = 0")
 
 
 def get_db() -> sqlite3.Connection:
@@ -195,6 +210,14 @@ def user_for_token(token: str) -> sqlite3.Row | None:
     return row
 
 
+def device_token_active(user_id: int, token: str) -> bool:
+    row = get_db().execute(
+        "SELECT 1 FROM device_tokens WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL",
+        (user_id, hash_secret(token)),
+    ).fetchone()
+    return row is not None
+
+
 def revoke_token(token_id: int) -> None:
     db = get_db()
     db.execute("UPDATE device_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", (iso(), token_id))
@@ -220,7 +243,7 @@ class RecordError(ValueError):
     pass
 
 
-def _validated(record: Any) -> tuple[str, str, bool, str | None]:
+def _validated(record: Any) -> tuple[str, str, bool, str | None, str]:
     if not isinstance(record, dict):
         raise RecordError("Each record must be an object.")
     table = record.get("table")
@@ -230,31 +253,79 @@ def _validated(record: Any) -> tuple[str, str, bool, str | None]:
     if not isinstance(record_id, str) or not record_id or len(record_id) > 128:
         raise RecordError("Each record needs a string id.")
     deleted = bool(record.get("deleted"))
+    stamp = record.get("updatedAt") if isinstance(record.get("updatedAt"), str) else ""
     data = record.get("data")
     if deleted:
-        return table, record_id, True, None
+        payload = None
+        if stamp:
+            payload = json.dumps({"id": record_id, "updatedAt": stamp}, separators=(",", ":"))
+        return table, record_id, True, payload, stamp
     if not isinstance(data, dict) or data.get("id") != record_id:
         raise RecordError("Record data must be an object with a matching id.")
-    return table, record_id, False, json.dumps(data, separators=(",", ":"))
+    return table, record_id, False, json.dumps(data, separators=(",", ":")), ""
+
+
+def _updated_at(data: str | None) -> str:
+    if not data:
+        return ""
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError:
+        return ""
+    value = parsed.get("updatedAt") if isinstance(parsed, dict) else None
+    return value if isinstance(value, str) else ""
+
+
+def _max_rev(db: sqlite3.Connection, user_id: int) -> int:
+    row = db.execute("SELECT COALESCE(MAX(rev), 0) FROM records WHERE user_id = ?", (user_id,)).fetchone()
+    return int(row[0])
+
+
+def _write_record(
+    db: sqlite3.Connection,
+    user_id: int,
+    table: str,
+    record_id: str,
+    deleted: bool,
+    data: str | None,
+    rev: int,
+    stamp: str,
+) -> None:
+    db.execute(
+        "INSERT INTO records (user_id, tbl, id, updated_at, deleted, data, rev) VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(user_id, tbl, id) DO UPDATE SET updated_at = excluded.updated_at, "
+        "deleted = excluded.deleted, data = excluded.data, rev = excluded.rev",
+        (user_id, table, record_id, stamp, int(deleted), data, rev),
+    )
 
 
 def apply_records(user_id: int, records: Iterable[Any]) -> int:
+    """Keeps a row when its updatedAt is newer. An older put or delete is ignored."""
     rows = [_validated(record) for record in records]
     stamp = iso()
     db = get_db()
-    db.executemany(
-        "INSERT INTO records (user_id, tbl, id, updated_at, deleted, data) VALUES (?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(user_id, tbl, id) DO UPDATE SET updated_at = excluded.updated_at, "
-        "deleted = excluded.deleted, data = excluded.data",
-        [(user_id, table, record_id, stamp, int(deleted), data) for table, record_id, deleted, data in rows],
-    )
-    db.execute("UPDATE users SET last_sync_at = ? WHERE id = ?", (stamp, user_id))
+    rev = _max_rev(db, user_id)
+    accepted = 0
+    for table, record_id, deleted, data, deleted_at in rows:
+        existing = db.execute(
+            "SELECT data FROM records WHERE user_id = ? AND tbl = ? AND id = ?",
+            (user_id, table, record_id),
+        ).fetchone()
+        stored_at = _updated_at(existing["data"]) if existing is not None else ""
+        incoming_at = deleted_at if deleted else _updated_at(data)
+        if existing is not None and incoming_at and stored_at and incoming_at <= stored_at:
+            continue
+        rev += 1
+        _write_record(db, user_id, table, record_id, deleted, data, rev, stamp)
+        accepted += 1
+    if accepted:
+        db.execute("UPDATE users SET last_sync_at = ? WHERE id = ?", (stamp, user_id))
     db.commit()
-    return len(rows)
+    return accepted
 
 
 def replace_all(user_id: int, tables: dict[str, list[Any]]) -> int:
-    """Replaces every record for the user with the given tables (phone is the source of truth)."""
+    """Replaces every record for the user. Bumps sync_epoch so other devices take the snapshot."""
     records: list[dict[str, Any]] = []
     for table, items in tables.items():
         if table not in SYNC_TABLES:
@@ -268,13 +339,39 @@ def replace_all(user_id: int, tables: dict[str, list[Any]]) -> int:
     stamp = iso()
     db = get_db()
     db.execute("DELETE FROM records WHERE user_id = ?", (user_id,))
-    db.executemany(
-        "INSERT INTO records (user_id, tbl, id, updated_at, deleted, data) VALUES (?, ?, ?, ?, 0, ?)",
-        [(user_id, table, record_id, stamp, data) for table, record_id, _deleted, data in rows],
+    for index, (table, record_id, _deleted, data, _stamp) in enumerate(rows, start=1):
+        _write_record(db, user_id, table, record_id, False, data, index, stamp)
+    db.execute(
+        "UPDATE users SET last_sync_at = ?, sync_epoch = COALESCE(sync_epoch, 0) + 1 WHERE id = ?",
+        (stamp, user_id),
     )
-    db.execute("UPDATE users SET last_sync_at = ? WHERE id = ?", (stamp, user_id))
     db.commit()
     return len(rows)
+
+
+def sync_epoch(user_id: int) -> int:
+    row = get_db().execute("SELECT sync_epoch FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None or row["sync_epoch"] is None:
+        return 0
+    return int(row["sync_epoch"])
+
+
+def changes_since(user_id: int, since_rev: int) -> tuple[list[dict[str, Any]], int, int]:
+    """Rows with rev greater than since_rev, including deletes. Cursor is the current max rev."""
+    db = get_db()
+    current = _max_rev(db, user_id)
+    rows = db.execute(
+        "SELECT tbl, id, deleted, data FROM records "
+        "WHERE user_id = ? AND rev > ? AND rev <= ? ORDER BY rev, tbl, id",
+        (user_id, since_rev, current),
+    ).fetchall()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if row["deleted"] or not row["data"]:
+            result.append({"table": row["tbl"], "id": row["id"], "deleted": True})
+        else:
+            result.append({"table": row["tbl"], "id": row["id"], "data": json.loads(row["data"])})
+    return result, current, sync_epoch(user_id)
 
 
 def load_tables(user_id: int) -> dict[str, list[dict[str, Any]]]:

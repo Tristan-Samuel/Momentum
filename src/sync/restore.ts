@@ -1,6 +1,6 @@
 import { db } from '@/database/db';
 import { backupSummary, importAll, normalizeEnvelope } from '@/database/backup';
-import { exchangeHandoff, fetchMe, fetchSnapshot, revokeToken } from '@/sync/api';
+import { exchangeHandoff, fetchMe, fetchSnapshot, fetchWebToken, revokeToken, SyncHttpError } from '@/sync/api';
 import { clearAccount, getAccount, isSignedIn, saveAccount } from '@/sync/auth';
 import { exclusive, uploadEverything } from '@/sync/engine';
 import { deviceLabel, type SignInResult } from '@/platform/webAuth';
@@ -41,6 +41,43 @@ export async function completeSignIn(result: SignInResult): Promise<'uploaded' |
   if (me.hasData) return 'choose';
   await uploadEverything();
   return 'uploaded';
+}
+
+/**
+ * Website sign-in. A browser that only has the first-run seed restores the account.
+ * A browser that already has workouts stops and asks which copy to keep.
+ */
+export async function completeWebSignIn(): Promise<'uploaded' | 'choose' | 'restored' | 'signed-out'> {
+  const existing = await getAccount();
+  if (isSignedIn(existing)) return existing.initialSyncDone ? 'uploaded' : 'choose';
+  let issued: Awaited<ReturnType<typeof fetchWebToken>>;
+  try {
+    issued = await fetchWebToken();
+  } catch (err) {
+    if (err instanceof SyncHttpError && err.status === 401) return 'signed-out';
+    throw err;
+  }
+  await db.outbox.clear();
+  await saveAccount({
+    token: issued.token,
+    email: issued.user.email,
+    name: issued.user.name,
+    initialSyncDone: false,
+    lastPushAt: null,
+    lastPullAt: null,
+    lastEpoch: null,
+    lastError: null,
+  });
+  const me = await fetchMe(issued.token);
+  if (!me.hasData) {
+    await uploadEverything();
+    return 'uploaded';
+  }
+  if ((await localWorkoutCount()) === 0) {
+    await restoreFromServer();
+    return 'restored';
+  }
+  return 'choose';
 }
 
 export async function signOut(): Promise<void> {

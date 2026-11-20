@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { useSettings } from '@/hooks/useSettings';
 import { AccountSection } from '@/components/AccountSection';
 import { Button } from '@/components/Button';
@@ -28,6 +29,7 @@ import { aiPromptFilename, buildAiPrompt } from '@/export/prompt';
 import { pickTextFile, shareTextFile } from '@/platform/files';
 import { requestNotificationPermission, sendTestNotification } from '@/platform/notifications';
 import { afterLocalReplace } from '@/sync/engine';
+import { askForAppUpdate, readUpdateStatus, statusIsCurrent, updateStatusMessage } from '@/platform/appUpdate';
 import type { LoadUnit, SoundProfile, ThemePreference } from '@/types';
 
 export function SettingsScreen() {
@@ -53,6 +55,8 @@ export function SettingsScreen() {
 
       <AccountSection />
 
+      {Capacitor.getPlatform() === 'ios' ? <AppUpdate /> : null}
+
       <Group label="Training">
         <Stepper
           label="Weekly goal"
@@ -63,8 +67,12 @@ export function SettingsScreen() {
           onChange={(weeklyGoal) => void updateSettings({ weeklyGoal })}
         />
         <p className="mt-2 text-sm text-[var(--muted)]">
-          Hit it each week (Monday to Sunday) to grow your streak on Home.
+          Hit it each week (Monday to Sunday) to grow your streak on Home. A days-per-week routine
+          uses its own count.
         </p>
+        <Link to="/schedule" className="mt-3 inline-flex items-center gap-1 text-sm text-[var(--accent)]">
+          Routines and reminders <Icon name="chevron-right" size={16} />
+        </Link>
         <div className="mt-5">
           <Segmented<LoadUnit>
             label="Weight unit"
@@ -347,6 +355,58 @@ export function SettingsScreen() {
         }}
       />
     </main>
+  );
+}
+
+function AppUpdate() {
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const stop = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      stop.current = true;
+    };
+  }, []);
+
+  return (
+    <Group label="App">
+      <p className="text-sm leading-relaxed text-[var(--muted)]">
+        Install the latest build from the home server. Keep the phone unlocked on the home Wi-Fi.
+        If iOS asks to find devices on the local network, allow it, then tap Update now again.
+      </p>
+      <Button
+        className="mt-4 w-full"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setStatus('Asking the home server…');
+          void askForAppUpdate()
+            .then(async (result) => {
+              setStatus(result.message);
+              if (!result.base) return;
+              for (let attempt = 0; attempt < 90 && !stop.current; attempt += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                if (stop.current) return;
+                try {
+                  const next = await readUpdateStatus(result.base);
+                  if (!next || !statusIsCurrent(next, result.at)) continue;
+                  setStatus(updateStatusMessage(next));
+                  if (next.action === 'installed' || next.action === 'failed' || next.action === 'wait') return;
+                } catch {
+                  return;
+                }
+              }
+            })
+            .finally(() => {
+              if (!stop.current) setBusy(false);
+            });
+        }}
+      >
+        Update now
+      </Button>
+      {status ? <p className="mt-3 text-sm text-[var(--muted)]">{status}</p> : null}
+    </Group>
   );
 }
 

@@ -10,6 +10,7 @@ import type {
   PreparedWorkout,
   ProgramExercise,
   ProgressionState,
+  Routine,
   SetSession,
   WorkoutProgram,
   WorkoutSession,
@@ -21,8 +22,10 @@ import {
   DEFAULT_PROGRAM,
   DEFAULT_SETTINGS,
   defaultProgression,
+  defaultRoutine,
   PROGRAM_ID,
 } from '@/database/seed';
+import type { ScheduleSession } from '@/schedule/resolve';
 import { weakerLegReps } from '@/progression/algorithm';
 import { queueDeletes } from '@/sync/outbox';
 import { createId, midpointTarget, nowIso } from '@/utils/id';
@@ -40,6 +43,7 @@ export async function ensureSeeded(): Promise<void> {
         db.exerciseConfigurations,
         db.progressionStates,
         db.appSettings,
+        db.routines,
       ],
       async () => {
         await db.workoutPrograms.add(DEFAULT_PROGRAM);
@@ -49,6 +53,7 @@ export async function ensureSeeded(): Promise<void> {
           DEFAULT_CONFIGS.map((config) => defaultProgression(config)),
         );
         await db.appSettings.put(DEFAULT_SETTINGS);
+        if ((await db.routines.count()) === 0) await db.routines.add(defaultRoutine());
       },
     );
     return;
@@ -78,6 +83,48 @@ export async function updateSettings(
   };
   await db.appSettings.put(next);
   return next;
+}
+
+export async function listRoutines(): Promise<Routine[]> {
+  const rows = await db.routines.toArray();
+  return rows.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+}
+
+export async function createRoutine(name: string, patch: Partial<Routine> = {}): Promise<Routine> {
+  const rows = await listRoutines();
+  const stamp = nowIso();
+  const routine: Routine = {
+    ...defaultRoutine(stamp),
+    ...patch,
+    id: createId(),
+    name,
+    order: rows.length,
+    createdAt: stamp,
+    updatedAt: stamp,
+    syncStatus: 'local',
+  };
+  await db.routines.add(routine);
+  return routine;
+}
+
+export async function updateRoutine(
+  id: string,
+  patch: Partial<Omit<Routine, 'id' | 'createdAt' | 'syncStatus'>>,
+): Promise<void> {
+  await db.routines.update(id, { ...patch, updatedAt: nowIso(), syncStatus: 'local' });
+}
+
+export async function deleteRoutine(id: string): Promise<void> {
+  await db.routines.delete(id);
+}
+
+export async function listScheduleSessions(): Promise<ScheduleSession[]> {
+  const rows = await db.workoutSessions.toArray();
+  return rows.map((row) => ({
+    programId: row.programId,
+    startedAt: row.startedAt,
+    status: row.status,
+  }));
 }
 
 export async function listPrograms(): Promise<WorkoutProgram[]> {

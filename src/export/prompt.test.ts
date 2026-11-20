@@ -17,6 +17,7 @@ function envelope(patch: Partial<BackupEnvelope['tables']> = {}): BackupEnvelope
       setSessions: [],
       personalRecords: [],
       appSettings: [{ id: 'app', weeklyGoal: 4, theme: 'dark', volume: 0.2 }],
+      routines: [],
       ...patch,
     },
   };

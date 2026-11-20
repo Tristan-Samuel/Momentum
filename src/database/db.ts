@@ -7,11 +7,13 @@ import type {
   OutboxEntry,
   PersonalRecord,
   ProgressionState,
+  Routine,
   SetSession,
   SyncAccount,
   WorkoutProgram,
   WorkoutSession,
 } from '@/types';
+import { defaultRoutine } from '@/database/seed';
 import { installOutboxHooks } from '@/sync/outbox';
 import { resolveLoad } from '@/utils/load';
 import { inferStartPosition } from '@/utils/tempo';
@@ -26,6 +28,7 @@ export class MomentumDB extends Dexie {
   setSessions!: EntityTable<SetSession, 'id'>;
   personalRecords!: EntityTable<PersonalRecord, 'id'>;
   appSettings!: EntityTable<AppSettings, 'id'>;
+  routines!: EntityTable<Routine, 'id'>;
   outbox!: EntityTable<OutboxEntry, 'key'>;
   syncState!: EntityTable<SyncAccount, 'id'>;
 
@@ -113,6 +116,14 @@ export class MomentumDB extends Dexie {
           if (!settings.weightUnit) settings.weightUnit = 'lb';
         });
     });
+    this.version(5)
+      .stores({
+        routines: 'id, order, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const count = await tx.table('routines').count();
+        if (count === 0) await tx.table('routines').add(defaultRoutine());
+      });
   }
 }
 

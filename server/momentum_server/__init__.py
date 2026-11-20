@@ -10,6 +10,7 @@ from momentum_server.api import register_api
 from momentum_server.auth import register_auth
 from momentum_server.config import DEV_SECRET, Config
 from momentum_server.store import close_db, init_db
+from momentum_server.web import register_web
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -31,6 +32,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     register_admin(app)
     register_auth(app)
     register_api(app)
+    register_web(app)
 
     @app.get("/health")
     def health():

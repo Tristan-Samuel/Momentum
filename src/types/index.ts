@@ -215,6 +215,33 @@ export type PersonalRecord = {
   syncStatus: SyncStatus;
 };
 
+export type RoutineMode = 'rotation' | 'weekdays' | 'shift' | 'weekly_count';
+
+/** One schedule. Morning and night are two of these, each with its own mode. */
+export type Routine = {
+  id: string;
+  name: string;
+  order: number;
+  enabled: boolean;
+  mode: RoutineMode;
+  /** Empty means every program, in program order. */
+  programIds: string[];
+  /** Index is JS weekday (0 Sunday). Null is a rest day. */
+  weekdays: Array<string | null>;
+  /** Repeating pattern. Null is a rest day. */
+  shift: Array<string | null>;
+  anchorDate: string;
+  /** When on, a missed shift day stays next until you train. When off, the calendar moves on. */
+  skipMissed: boolean;
+  weeklyCount: number;
+  reminderEnabled: boolean;
+  reminderHour: number;
+  reminderMinute: number;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus: SyncStatus;
+};
+
 export type AppSettings = {
   id: 'app';
   theme: ThemePreference;
@@ -256,6 +283,7 @@ export const SYNC_TABLES = [
   'setSessions',
   'personalRecords',
   'appSettings',
+  'routines',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
@@ -274,6 +302,8 @@ export type SyncAccount = {
   email: string;
   name: string;
   lastPushAt: string | null;
+  lastPullAt: string | null;
+  lastEpoch: number | null;
   lastError: string | null;
   initialSyncDone: boolean;
 };

@@ -80,7 +80,20 @@ def register_api(app: Flask) -> None:
                 accepted = store.apply_records(user_id, records)
         except store.RecordError as exc:
             return jsonify({"error": str(exc)}), 400
-        return jsonify({"accepted": accepted, "serverTime": store.iso()})
+        return jsonify({"accepted": accepted, "serverTime": store.iso(), "epoch": store.sync_epoch(user_id)})
+
+    @app.get("/api/sync/changes")
+    @bearer_required
+    def changes():
+        raw = request.args.get("since", "")
+        if raw == "":
+            since_rev = -1
+        elif raw.isdigit() and len(raw) <= 18:
+            since_rev = int(raw)
+        else:
+            return jsonify({"error": "Bad cursor."}), 400
+        records, cursor, epoch = store.changes_since(g.api_user["id"], since_rev)
+        return jsonify({"records": records, "cursor": str(cursor), "epoch": epoch})
 
     @app.get("/api/sync/snapshot")
     @bearer_required

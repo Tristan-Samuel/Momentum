@@ -55,6 +55,133 @@ def test_push_overwrites_and_deletes(client, auth):
     assert rows == [{"id": "p1", "name": "Renamed", "order": 0}]
 
 
+def test_stale_push_is_ignored(client, auth):
+    newer = {
+        "table": "workoutPrograms",
+        "id": "p1",
+        "data": {"id": "p1", "name": "New", "order": 0, "updatedAt": "2026-02-02T00:00:00.000Z"},
+    }
+    older = {
+        "table": "workoutPrograms",
+        "id": "p1",
+        "data": {"id": "p1", "name": "Old", "order": 0, "updatedAt": "2026-01-01T00:00:00.000Z"},
+    }
+    assert client.post("/api/sync/push", headers=auth, json={"records": [newer]}).get_json()["accepted"] == 1
+    stale = client.post("/api/sync/push", headers=auth, json={"records": [older]})
+    assert stale.get_json()["accepted"] == 0
+    same = client.post("/api/sync/push", headers=auth, json={"records": [newer]})
+    assert same.get_json()["accepted"] == 0
+    rows = client.get("/api/sync/snapshot", headers=auth).get_json()["tables"]["workoutPrograms"]
+    assert rows == [{"id": "p1", "name": "New", "order": 0, "updatedAt": "2026-02-02T00:00:00.000Z"}]
+
+
+def test_older_delete_does_not_remove_a_newer_row(client, auth):
+    client.post(
+        "/api/sync/push",
+        headers=auth,
+        json={
+            "records": [
+                {
+                    "table": "workoutPrograms",
+                    "id": "p1",
+                    "data": {"id": "p1", "name": "New", "updatedAt": "2026-02-02T00:00:00.000Z"},
+                }
+            ]
+        },
+    )
+    deleted = client.post(
+        "/api/sync/push",
+        headers=auth,
+        json={"records": [{"table": "workoutPrograms", "id": "p1", "deleted": True, "updatedAt": "2026-01-01T00:00:00.000Z"}]},
+    )
+    assert deleted.get_json()["accepted"] == 0
+    rows = client.get("/api/sync/snapshot", headers=auth).get_json()["tables"]["workoutPrograms"]
+    assert rows[0]["name"] == "New"
+
+
+def test_changes_include_tombstones_and_a_cursor(client, auth):
+    client.post(
+        "/api/sync/push",
+        headers=auth,
+        json={
+            "records": [
+                {
+                    "table": "workoutPrograms",
+                    "id": "p1",
+                    "data": {"id": "p1", "name": "Day A", "updatedAt": "2026-01-01T00:00:00.000Z"},
+                }
+            ]
+        },
+    )
+    client.post(
+        "/api/sync/push",
+        headers=auth,
+        json={"records": [{"table": "workoutPrograms", "id": "p1", "deleted": True, "updatedAt": "2026-03-01T00:00:00.000Z"}]},
+    )
+    page = client.get("/api/sync/changes", headers=auth).get_json()
+    assert page["epoch"] == 0
+    assert page["cursor"].isdigit()
+    assert {"table": "workoutPrograms", "id": "p1", "deleted": True} in page["records"]
+    again = client.get("/api/sync/changes", headers=auth, query_string={"since": page["cursor"]}).get_json()
+    assert again["records"] == []
+    assert again["cursor"] == page["cursor"]
+    assert client.get("/api/sync/changes", headers=auth, query_string={"since": "nope"}).status_code == 400
+
+
+def test_reset_bumps_the_epoch(client, auth):
+    client.post("/api/sync/push", headers=auth, json={"records": [program()]})
+    first = client.get("/api/sync/changes", headers=auth).get_json()["epoch"]
+    client.post("/api/sync/push", headers=auth, json={"reset": True, "records": [program("p3")]})
+    page = client.get("/api/sync/changes", headers=auth).get_json()
+    assert page["epoch"] == first + 1
+    assert [row["id"] for row in page["records"] if not row.get("deleted")] == ["p3"]
+
+
+def test_web_token_requires_a_signed_in_session(client):
+    assert client.post("/api/web/token").status_code == 401
+    assert client.get("/login").status_code == 302
+    first = client.post("/api/web/token").get_json()
+    second = client.post("/api/web/token").get_json()
+    assert first["token"] == second["token"]
+    assert first["user"]["email"] == "dev@localhost"
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {first['token']}"}).status_code == 200
+
+
+def test_web_dist_serves_the_app_and_leaves_the_api_alone(tmp_path):
+    from momentum_server import create_app
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><div id=root>", encoding="utf-8")
+    (dist / "favicon.svg").write_text("<svg></svg>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "MOMENTUM_DATA_DIR": str(tmp_path),
+            "MOMENTUM_DB_PATH": str(tmp_path / "momentum.db"),
+            "LOGIN_URL": "",
+            "LOGIN_CLIENT_SECRET": "",
+            "MOMENTUM_WEB_DIST": str(dist),
+            "PRODUCTION": False,
+        }
+    )
+    browser = application.test_client()
+    assert b"id=root" in browser.get("/").data
+    assert b"id=root" in browser.get("/configure").data
+    assert b"id=root" in browser.get("/schedule").data
+    assert b"id=root" in browser.get("/review/abc").data
+    assert browser.get("/favicon.svg").data.startswith(b"<svg")
+    assert browser.get("/assets/app.js").status_code == 200
+    assert browser.get("/health").status_code == 200
+    assert browser.get("/login").status_code == 302
+    assert browser.get("/api/me").status_code == 401
+    missing = browser.get("/api/nope")
+    assert missing.status_code == 404
+    assert b"id=root" not in missing.data
+
+
 def test_reset_replaces_everything(client, auth):
     client.post("/api/sync/push", headers=auth, json={"records": [program(), program("p2")]})
     client.post("/api/sync/push", headers=auth, json={"reset": True, "records": [program("p3")]})

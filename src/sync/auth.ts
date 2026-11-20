@@ -14,6 +14,8 @@ export async function saveAccount(patch: Partial<Omit<SyncAccount, 'id'>>): Prom
     email: '',
     name: '',
     lastPushAt: null,
+    lastPullAt: null,
+    lastEpoch: null,
     lastError: null,
     initialSyncDone: false,
     ...current,
