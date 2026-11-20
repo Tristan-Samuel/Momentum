@@ -9,6 +9,9 @@ export type Tempo = {
 
 export type TempoPhase = 'eccentric' | 'bottomPause' | 'concentric' | 'topPause';
 
+/** `top` lowers first (push-up, squat). `bottom` lifts first (pull-up, chin-up). */
+export type StartPosition = 'top' | 'bottom';
+
 export type Laterality = 'bilateral' | 'unilateral';
 export type Measure = 'reps' | 'seconds';
 export type UnilateralOrder = 'right-then-left' | 'left-then-right' | 'alternating';
@@ -47,6 +50,7 @@ export type ExerciseConfiguration = {
   minReps: number;
   maxReps: number;
   tempo: Tempo;
+  startPosition?: StartPosition;
   restAfterSetSeconds: number;
   transitionAfterExerciseSeconds: number;
   targetRirMin: number;
@@ -111,6 +115,7 @@ export type ExerciseConfigSnapshot = {
   minReps: number;
   maxReps: number;
   tempo: Tempo;
+  startPosition?: StartPosition;
   restAfterSetSeconds: number;
   transitionAfterExerciseSeconds: number;
   targetRirMin: number;

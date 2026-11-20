@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -10,12 +11,13 @@ import { Stepper } from '@/components/ui/Stepper';
 import { usePreparedWorkout } from '@/hooks/usePreparedWorkout';
 import * as repo from '@/database/repository';
 import { formatTodayPlan, targetsForExercise, unitSuffix } from '@/utils/prescription';
-import { formatTempo } from '@/utils/tempo';
+import { formatTempo, startPositionOf } from '@/utils/tempo';
 import type {
   ExerciseConfiguration,
   Laterality,
   Measure,
   ProgramExercise,
+  StartPosition,
   UnilateralOrder,
   WorkoutProgram,
 } from '@/types';
@@ -40,8 +42,18 @@ export function ConfigureScreen() {
 
   return (
     <main>
-      <p className="text-xs tracking-[0.25em] text-[var(--muted)]">PROGRAM</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight">Configuration</h1>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs tracking-[0.25em] text-[var(--muted)]">PROGRAM</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Configuration</h1>
+        </div>
+        <Link
+          to={`/coach?program=${program.id}`}
+          className="mb-1 rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
+        >
+          Coach
+        </Link>
+      </div>
 
       <section className="mt-6">
         <SectionLabel
@@ -397,7 +409,22 @@ function ExerciseEditor({
             <>
               <SectionLabel className="mt-6">Tempo {formatTempo(item.tempo)}</SectionLabel>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                Seconds to lower, pause at the bottom, lift, then hold at the top.
+                Seconds to lower, pause at the bottom, lift, then hold at the top. The first movement
+                decides which of those happens first.
+              </p>
+              <div className="mt-3">
+                <Segmented<StartPosition>
+                  label="First movement"
+                  value={startPositionOf(item.startPosition)}
+                  options={[
+                    { value: 'top', label: 'Lower first' },
+                    { value: 'bottom', label: 'Lift first' },
+                  ]}
+                  onChange={(startPosition) => void patch({ startPosition })}
+                />
+              </div>
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                Lift first for pull-ups and chin-ups. You start at the bottom.
               </p>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <Stepper
@@ -516,7 +543,15 @@ function Glossary() {
           <dt className="text-[var(--fg)]">Tempo</dt>
           <dd className="mt-1">
             Seconds per phase: lowering, pause at the bottom, lifting, pause at the top. 3-0-1-0 is 3
-            seconds down, no pause, 1 second up, no hold.
+            seconds down, no pause, 1 second up, no hold. Lower first starts at the top (push-ups,
+            squats). Lift first starts in the hang (pull-ups, chin-ups).
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[var(--fg)]">Rest and transition</dt>
+          <dd className="mt-1">
+            Rest is only between sets of the same exercise. After the last set, the transition is the
+            only gap before the next exercise. There is no extra rest there.
           </dd>
         </div>
         <div>

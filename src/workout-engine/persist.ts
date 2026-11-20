@@ -2,7 +2,18 @@ import { applyCompletedSessionProgression } from '@/progression/apply';
 import * as repo from '@/database/repository';
 import type { EngineEvent } from '@/workout-engine/events';
 
-export async function persistEngineEvents(events: EngineEvent[]): Promise<void> {
+let tail: Promise<void> = Promise.resolve();
+
+export function persistEngineEvents(events: EngineEvent[]): Promise<void> {
+  const run = tail.then(() => writeEngineEvents(events));
+  tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function writeEngineEvents(events: EngineEvent[]): Promise<void> {
   for (const event of events) {
     switch (event.type) {
       case 'snapshot': {

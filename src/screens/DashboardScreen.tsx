@@ -50,12 +50,20 @@ export function DashboardScreen() {
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight">Next workout</h1>
         </div>
-        <Link
-          to="/guide"
-          className="mt-1 rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
-        >
-          How it works
-        </Link>
+        <div className="mt-1 flex gap-2">
+          <Link
+            to="/coach"
+            className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
+          >
+            Coach
+          </Link>
+          <Link
+            to="/guide"
+            className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
+          >
+            How it works
+          </Link>
+        </div>
       </div>
 
       {programs.length > 1 ? (

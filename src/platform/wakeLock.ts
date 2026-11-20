@@ -17,6 +17,16 @@ type KeepAwakePlugin = {
 
 const KeepAwake = registerPlugin<KeepAwakePlugin>('KeepAwake');
 
+function settle<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer = 0;
+  return Promise.race([
+    promise,
+    new Promise<undefined>((resolve) => {
+      timer = window.setTimeout(() => resolve(undefined), ms);
+    }),
+  ]).finally(() => window.clearTimeout(timer));
+}
+
 export class WakeLockPort {
   private sentinel: WakeLockSentinel | null = null;
   private enabled = true;
@@ -32,7 +42,7 @@ export class WakeLockPort {
   async request(): Promise<void> {
     if (!this.enabled || typeof navigator === 'undefined') return;
     if (Capacitor.isNativePlatform()) {
-      await KeepAwake.keepAwake();
+      await settle(KeepAwake.keepAwake(), 800);
       this.nativeHeld = true;
       return;
     }
@@ -41,7 +51,21 @@ export class WakeLockPort {
     };
     if (!nav.wakeLock) return;
     try {
-      this.sentinel = await nav.wakeLock.request('screen');
+      const pending = nav.wakeLock.request('screen');
+      const sentinel = await settle(pending, 800);
+      if (sentinel) {
+        this.sentinel = sentinel;
+        return;
+      }
+      void pending
+        .then((later) => {
+          if (!this.enabled || this.sentinel) {
+            void later.release();
+            return;
+          }
+          this.sentinel = later;
+        })
+        .catch(() => undefined);
     } catch {
       this.sentinel = null;
     }

@@ -29,9 +29,10 @@ import {
   type ScheduledCue,
 } from '@/timing-engine/cues';
 import type { Clock } from '@/timing-engine/clock';
-import { formatTempo, formatTempoDisplay, phaseAt, tempoSeconds } from '@/utils/tempo';
+import { formatTempo, formatTempoDisplay, phaseAt, startPositionOf, tempoSeconds } from '@/utils/tempo';
 import { createId, nowIso } from '@/utils/id';
 import { weakerLegReps } from '@/progression/algorithm';
+import { explainProgression } from '@/progression/explain';
 import type { EngineEvent } from '@/workout-engine/events';
 import type {
   EngineSnapshotV1,
@@ -41,7 +42,7 @@ import type {
 import { SNAPSHOT_VERSION } from '@/workout-engine/types';
 
 const SET_COMPLETE_SECONDS = 2;
-const EXERCISE_COMPLETE_SECONDS = 2.5;
+const EXERCISE_COMPLETE_SECONDS = 12;
 
 type AudioPort = Pick<AudioEngine, 'schedule' | 'cancel' | 'unlock'>;
 
@@ -72,6 +73,7 @@ export class WorkoutEngine {
 
   private prepared: PreparedWorkout | null = null;
   private segmentStartedAt = 0;
+  private segmentStartedWall = 0;
   private segmentDuration = 0;
   private elapsedAtPause = 0;
   private restPlanned = 0;
@@ -79,6 +81,9 @@ export class WorkoutEngine {
   private lastLoggedSetKey = '';
   private events: EngineEvent[] = [];
   private lastSnapshotAt = 0;
+  private userPaused = false;
+  private ratingIndex: number | null = null;
+  private loggedReps: number[][] = [];
 
   constructor(private readonly options: WorkoutEngineOptions) {}
 
@@ -101,6 +106,9 @@ export class WorkoutEngine {
       rir: null,
       formQuality: null,
     }));
+    this.loggedReps = prepared.exercises.map((item) => Array.from({ length: item.sets }, () => 0));
+    this.ratingIndex = null;
+    this.userPaused = false;
     this.status = 'in_progress';
     this.startedAtWall = this.wall();
     this.lastLoggedSetKey = '';
@@ -118,16 +126,28 @@ export class WorkoutEngine {
     this.prescribedTargets = snapshot.prescribedTargets.map((row) => row.slice());
     this.exerciseSessionIds = snapshot.exerciseSessionIds.slice();
     this.ratings = snapshot.ratings.map((row) => ({ ...row }));
+    this.loggedReps =
+      snapshot.loggedReps?.map((row) => row.slice()) ??
+      prepared.exercises.map((item) => Array.from({ length: item.sets }, () => 0));
+    this.ratingIndex = snapshot.ratingIndex ?? null;
+    this.userPaused = snapshot.userPaused === true;
     this.lastLoggedSetKey = snapshot.lastLoggedSetKey ?? '';
     this.status = snapshot.status;
     this.startedAtWall = snapshot.startedAtWall;
     this.restPlanned = snapshot.restPlanned;
     const now = this.clock();
     let elapsed = snapshot.elapsedInSegment;
-    if (shouldCatchUpOnResume(snapshot.kind) || (snapshot.kind === 'paused' && snapshot.pausedKind && shouldCatchUpOnResume(snapshot.pausedKind))) {
+    const catchUp =
+      !this.userPaused &&
+      (shouldCatchUpOnResume(snapshot.kind) ||
+        (snapshot.kind === 'paused' &&
+          snapshot.pausedKind != null &&
+          shouldCatchUpOnResume(snapshot.pausedKind)));
+    if (catchUp) {
       elapsed += (this.wall() - snapshot.wallClockAt) / 1000;
     }
-    const kind = snapshot.kind === 'paused' ? snapshot.pausedKind ?? 'paused' : snapshot.kind;
+    const wasPaused = snapshot.kind === 'paused';
+    const kind = wasPaused ? snapshot.pausedKind ?? 'paused' : snapshot.kind;
     this.pausedKind = null;
     this.kind = 'idle';
     if (kind === 'workout_complete' || snapshot.status !== 'in_progress') {
@@ -137,20 +157,33 @@ export class WorkoutEngine {
       return;
     }
     this.enter(kind, now - Math.max(0, elapsed), snapshot.segmentDuration, true);
-    if (snapshot.kind === 'paused' && !shouldCatchUpOnResume(kind)) {
-      this.pause();
+    if (wasPaused && (this.userPaused || !shouldCatchUpOnResume(kind))) {
+      this.hold(this.userPaused);
+    }
+    if (snapshot.ratingIndex != null && (kind === 'exercise_transition' || kind === 'exercise_complete')) {
+      this.ratingIndex = snapshot.ratingIndex;
     }
   }
 
   handleVisibilityHidden(): void {
     if (shouldPauseForBackground(this.kind)) {
-      this.pause();
+      this.hold(false);
+      return;
     }
     this.emitSnapshot();
   }
 
   handleVisibilityVisible(): void {
+    if (this.kind === 'paused' && this.userPaused) {
+      this.sync();
+      return;
+    }
+    if (this.kind === 'resting' || this.kind === 'exercise_transition') {
+      this.realignToWall();
+    }
     if (this.kind === 'paused' && this.pausedKind && shouldCatchUpOnResume(this.pausedKind)) {
+      const elapsed = Math.max(0, (this.wall() - this.segmentStartedWall) / 1000);
+      this.elapsedAtPause = elapsed;
       this.resume();
     }
     this.sync();
@@ -173,14 +206,24 @@ export class WorkoutEngine {
   }
 
   pause(): void {
+    this.hold(true);
+  }
+
+  private hold(user: boolean): void {
     if (this.kind === 'paused' || this.kind === 'idle' || this.kind === 'workout_complete') {
       return;
     }
     this.elapsedAtPause = Math.max(0, this.clock() - this.segmentStartedAt);
     this.pausedKind = this.kind;
     this.kind = 'paused';
+    this.userPaused = user;
     this.options.audio?.cancel();
     this.emitSnapshot();
+  }
+
+  private realignToWall(): void {
+    const elapsed = Math.max(0, (this.wall() - this.segmentStartedWall) / 1000);
+    this.segmentStartedAt = this.clock() - elapsed;
   }
 
   resume(): void {
@@ -188,6 +231,7 @@ export class WorkoutEngine {
     const now = this.clock();
     const resumeKind = this.pausedKind;
     this.pausedKind = null;
+    this.userPaused = false;
     this.enter(resumeKind, now - this.elapsedAtPause, this.segmentDuration, true);
   }
 
@@ -207,7 +251,7 @@ export class WorkoutEngine {
       this.setIndex = i;
       this.logCurrentSet({ skipped: true, completedFromElapsed: false });
     }
-    this.enter('exercise_complete', this.clock(), EXERCISE_COMPLETE_SECONDS);
+    this.beginAfterExercise(this.clock());
   }
 
   restartSet(): void {
@@ -267,12 +311,19 @@ export class WorkoutEngine {
     rir: number | null;
     formQuality: FormQuality | null;
   }): void {
-    this.ratings[this.exerciseIndex] = input;
-    const id = this.exerciseSessionIds[this.exerciseIndex];
+    if (this.ratingIndex == null) return;
+    const index = this.ratingIndex;
+    const rating = {
+      difficultyRating: input.difficultyRating,
+      rir: input.rir,
+      formQuality: input.formQuality,
+    };
+    this.ratings[index] = rating;
+    const id = this.exerciseSessionIds[index];
     this.events.push({
       type: 'exercise_rated',
       exerciseSessionId: id,
-      ...input,
+      ...rating,
     });
     this.emitSnapshot();
   }
@@ -306,6 +357,9 @@ export class WorkoutEngine {
       ratings: this.ratings.map((row) => ({ ...row })),
       lastLoggedSetKey: this.lastLoggedSetKey,
       status: this.status,
+      userPaused: this.userPaused,
+      ratingIndex: this.ratingIndex,
+      loggedReps: this.loggedReps.map((row) => row.slice()),
     };
   }
 
@@ -322,6 +376,9 @@ export class WorkoutEngine {
     const kind = this.kind === 'paused' ? this.pausedKind ?? 'paused' : this.kind;
     let currentRep = 0;
     let phase = null as WorkoutView['phase'];
+    let phaseElapsed = 0;
+    let phaseRemaining = 0;
+    let phaseDuration = 0;
     let side: WorkoutView['side'];
     let countdown: number | null = null;
     let restRemaining = 0;
@@ -329,6 +386,7 @@ export class WorkoutEngine {
     let setCompleteReps = target;
     let holdRemaining = 0;
     let switchingSides = false;
+    const startPosition = startPositionOf(item.startPosition);
 
     if (kind === 'pre_set_countdown') {
       countdown = Math.max(1, Math.ceil(this.segmentDuration - elapsed));
@@ -348,8 +406,11 @@ export class WorkoutEngine {
       if (progress.slot) {
         currentRep = progress.slot.repOnSide;
         side = progress.slot.side;
-        const phaseInfo = phaseAt(item.tempo, progress.secondsIntoRep);
+        const phaseInfo = phaseAt(item.tempo, progress.secondsIntoRep, startPosition);
         phase = phaseInfo.phase;
+        phaseElapsed = phaseInfo.phaseElapsed;
+        phaseRemaining = phaseInfo.phaseRemaining;
+        phaseDuration = phaseInfo.phaseDuration;
       } else {
         currentRep = target;
       }
@@ -367,11 +428,41 @@ export class WorkoutEngine {
     }
 
     const next = this.peekNext();
-    const rating = this.ratings[this.exerciseIndex] ?? {
+    const rateIndex = this.ratingIndex;
+    const canRate =
+      rateIndex != null && (kind === 'exercise_complete' || kind === 'exercise_transition');
+    const ratedItem = rateIndex != null ? prepared.exercises[rateIndex] : undefined;
+    const rating = (rateIndex != null ? this.ratings[rateIndex] : undefined) ?? {
       difficultyRating: null,
       rir: null,
       formQuality: null,
     };
+    let ratingNote = '';
+    if (canRate && ratedItem && rateIndex != null) {
+      const completed = this.loggedReps[rateIndex] ?? [];
+      ratingNote = explainProgression(
+        {
+          sets: ratedItem.sets,
+          minReps: ratedItem.minReps,
+          maxReps: ratedItem.maxReps,
+          targetRirMin: ratedItem.targetRirMin,
+          targetRirMax: ratedItem.targetRirMax,
+          currentTargets: this.actualTargets[rateIndex] ?? [],
+          completedReps: completed,
+          previousCompletedReps: ratedItem.progression.lastCompletedReps,
+          rating: rating.difficultyRating,
+          rir: rating.rir,
+          formQuality: rating.formQuality,
+          targetReduced: (this.actualTargets[rateIndex] ?? []).some(
+            (value, index) => value < (this.prescribedTargets[rateIndex]?.[index] ?? value),
+          ),
+          resistanceLabel: ratedItem.progression.resistanceLabel,
+          step: ratedItem.progressionStep ?? 1,
+        },
+        ratedItem.measure,
+        'workout',
+      );
+    }
 
     return {
       kind: this.kind,
@@ -389,6 +480,10 @@ export class WorkoutEngine {
       currentRepDisplay: currentRep,
       targetDisplay: target,
       phase,
+      phaseElapsed,
+      phaseRemaining,
+      phaseDuration,
+      startPosition,
       side,
       tempoLabel: formatTempoDisplay(item.tempo),
       tempoCompact: formatTempo(item.tempo),
@@ -400,8 +495,11 @@ export class WorkoutEngine {
       nextSetIndex: next.setIndex,
       nextTarget: next.target,
       elapsedWorkoutMs: Math.max(0, this.wall() - this.startedAtWall),
-      canRate: kind === 'exercise_complete' || kind === 'exercise_transition',
+      canRate,
+      ratingExerciseName: ratedItem?.exercise.name ?? '',
+      ratingNote,
       rating,
+      upcomingGap: this.upcomingGap(kind),
       resistanceLabel: item.progression.resistanceLabel,
       laterality: item.laterality,
       setCompleteReps,
@@ -425,6 +523,7 @@ export class WorkoutEngine {
     if (this.kind !== 'paused' || !this.pausedKind) return;
     this.kind = this.pausedKind;
     this.pausedKind = null;
+    this.userPaused = false;
     this.segmentStartedAt = this.clock() - this.elapsedAtPause;
   }
 
@@ -477,6 +576,7 @@ export class WorkoutEngine {
         this.finishExercise(now);
         break;
       case 'exercise_transition':
+        this.ratingIndex = null;
         this.enter('pre_set_countdown', now, 3);
         break;
       default:
@@ -489,27 +589,47 @@ export class WorkoutEngine {
     if (!item) return;
     if (this.setIndex < item.sets - 1) {
       this.setIndex += 1;
-      this.restPlanned = item.restAfterSetSeconds;
-      this.enter('resting', now, item.restAfterSetSeconds);
+      const rest = Math.max(0, Number(item.restAfterSetSeconds) || 0);
+      if (rest <= 0) {
+        this.enter('pre_set_countdown', now, 3);
+        return;
+      }
+      this.restPlanned = rest;
+      this.enter('resting', now, rest);
+      return;
+    }
+    this.beginAfterExercise(now);
+  }
+
+  private beginAfterExercise(now: number): void {
+    const prepared = this.prepared;
+    if (!prepared) return;
+    const finished = this.exerciseIndex;
+    this.ratingIndex = finished;
+    const id = this.exerciseSessionIds[finished];
+    this.events.push({ type: 'exercise_complete', exerciseSessionId: id });
+    const transition = Math.max(
+      0,
+      Number(prepared.exercises[finished]?.transitionAfterExerciseSeconds) || 0,
+    );
+    if (finished < prepared.exercises.length - 1) {
+      this.exerciseIndex += 1;
+      this.setIndex = 0;
+      this.emitExerciseSession(this.exerciseIndex);
+      if (transition <= 0) {
+        this.ratingIndex = null;
+        this.enter('pre_set_countdown', now, 3);
+        return;
+      }
+      this.restPlanned = transition;
+      this.enter('exercise_transition', now, transition);
       return;
     }
     this.enter('exercise_complete', now, EXERCISE_COMPLETE_SECONDS);
   }
 
-  private finishExercise(now: number): void {
-    const prepared = this.prepared;
-    if (!prepared) return;
-    const id = this.exerciseSessionIds[this.exerciseIndex];
-    this.events.push({ type: 'exercise_complete', exerciseSessionId: id });
-    if (this.exerciseIndex < prepared.exercises.length - 1) {
-      this.exerciseIndex += 1;
-      this.setIndex = 0;
-      this.emitExerciseSession(this.exerciseIndex);
-      const prev = prepared.exercises[this.exerciseIndex - 1];
-      this.restPlanned = prev.transitionAfterExerciseSeconds;
-      this.enter('exercise_transition', now, prev.transitionAfterExerciseSeconds);
-      return;
-    }
+  private finishExercise(_now: number): void {
+    this.ratingIndex = null;
     this.status = 'completed';
     this.kind = 'workout_complete';
     this.options.audio?.cancel();
@@ -522,6 +642,29 @@ export class WorkoutEngine {
     this.emitSnapshot();
   }
 
+  private upcomingGap(kind: StateKind): { kind: 'rest' | 'transition'; seconds: number } | null {
+    if (
+      kind === 'resting' ||
+      kind === 'exercise_transition' ||
+      kind === 'workout_complete' ||
+      kind === 'exercise_complete'
+    ) {
+      return null;
+    }
+    const prepared = this.prepared;
+    const item = this.currentItem();
+    if (!prepared || !item) return null;
+    if (this.setIndex < item.sets - 1) {
+      const seconds = Math.max(0, Number(item.restAfterSetSeconds) || 0);
+      return seconds > 0 ? { kind: 'rest', seconds } : null;
+    }
+    if (this.exerciseIndex < prepared.exercises.length - 1) {
+      const seconds = Math.max(0, Number(item.transitionAfterExerciseSeconds) || 0);
+      return seconds > 0 ? { kind: 'transition', seconds } : null;
+    }
+    return null;
+  }
+
   private enter(
     kind: StateKind,
     startedAt: number,
@@ -531,6 +674,10 @@ export class WorkoutEngine {
     this.kind = kind;
     this.segmentStartedAt = startedAt;
     this.segmentDuration = duration;
+    this.segmentStartedWall = this.wall() - Math.max(0, this.clock() - startedAt) * 1000;
+    if (kind === 'pre_set_countdown' || kind === 'set_active') {
+      this.ratingIndex = null;
+    }
     if (kind === 'resting' || kind === 'exercise_transition') {
       this.restPlanned = duration;
     }
@@ -566,7 +713,12 @@ export class WorkoutEngine {
     }
     if (this.kind === 'set_active' && item) {
       const plan = this.planFor(item, this.currentTarget());
-      const { cues } = buildSetCues(item.tempo, plan, start + SET_START_DELAY);
+      const { cues } = buildSetCues(
+        item.tempo,
+        plan,
+        start + SET_START_DELAY,
+        startPositionOf(item.startPosition),
+      );
       return cues.filter((cue) => cue.at >= now - 0.01);
     }
     if (this.kind === 'set_complete') {
@@ -695,6 +847,10 @@ export class WorkoutEngine {
       updatedAt: stampIso,
       syncStatus: 'local',
     };
+    if (!this.loggedReps[this.exerciseIndex]) {
+      this.loggedReps[this.exerciseIndex] = [];
+    }
+    this.loggedReps[this.exerciseIndex][this.setIndex] = completedReps;
     this.events.push({ type: 'set_session', record });
   }
 
@@ -709,6 +865,7 @@ export class WorkoutEngine {
       minReps: item.minReps,
       maxReps: item.maxReps,
       tempo: item.tempo,
+      startPosition: startPositionOf(item.startPosition),
       restAfterSetSeconds: item.restAfterSetSeconds,
       transitionAfterExerciseSeconds: item.transitionAfterExerciseSeconds,
       targetRirMin: item.targetRirMin,
@@ -785,6 +942,10 @@ function emptyView(engine: WorkoutEngine): WorkoutView {
     currentRepDisplay: 0,
     targetDisplay: 0,
     phase: null,
+    phaseElapsed: 0,
+    phaseRemaining: 0,
+    phaseDuration: 0,
+    startPosition: 'top',
     side: undefined,
     tempoLabel: '',
     tempoCompact: '',
@@ -797,7 +958,10 @@ function emptyView(engine: WorkoutEngine): WorkoutView {
     nextTarget: 0,
     elapsedWorkoutMs: 0,
     canRate: false,
+    ratingExerciseName: '',
+    ratingNote: '',
     rating: { difficultyRating: null, rir: null, formQuality: null },
+    upcomingGap: null,
     resistanceLabel: '',
     laterality: 'bilateral',
     setCompleteReps: 0,

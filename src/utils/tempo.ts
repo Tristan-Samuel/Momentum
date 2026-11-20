@@ -1,4 +1,4 @@
-import type { Tempo, TempoPhase } from '@/types';
+import type { StartPosition, Tempo, TempoPhase } from '@/types';
 
 export const TEMPO_PHASES: TempoPhase[] = [
   'eccentric',
@@ -6,6 +6,26 @@ export const TEMPO_PHASES: TempoPhase[] = [
   'concentric',
   'topPause',
 ];
+
+const LIFT_FIRST: TempoPhase[] = [
+  'concentric',
+  'topPause',
+  'eccentric',
+  'bottomPause',
+];
+
+export function startPositionOf(value: StartPosition | undefined | null): StartPosition {
+  return value === 'bottom' ? 'bottom' : 'top';
+}
+
+export function phaseOrder(start: StartPosition = 'top'): TempoPhase[] {
+  return start === 'bottom' ? LIFT_FIRST : TEMPO_PHASES;
+}
+
+/** Pull-ups and chin-ups start in the hang, so the first movement is the lift. */
+export function inferStartPosition(name: string): StartPosition {
+  return /\b(pull-?ups?|chin-?ups?)\b/i.test(name) ? 'bottom' : 'top';
+}
 
 export function tempoSeconds(tempo: Tempo): number {
   return (
@@ -27,10 +47,10 @@ export type ActivePhase = {
   offset: number;
 };
 
-export function activePhases(tempo: Tempo): ActivePhase[] {
+export function activePhases(tempo: Tempo, start: StartPosition = 'top'): ActivePhase[] {
   let offset = 0;
   const phases: ActivePhase[] = [];
-  for (const name of TEMPO_PHASES) {
+  for (const name of phaseOrder(start)) {
     const duration = tempo[name];
     if (duration > 0) {
       phases.push({ name, duration, offset });
@@ -40,14 +60,19 @@ export function activePhases(tempo: Tempo): ActivePhase[] {
   return phases;
 }
 
-export function phaseAt(tempo: Tempo, secondsIntoRep: number): {
+export function phaseAt(
+  tempo: Tempo,
+  secondsIntoRep: number,
+  start: StartPosition = 'top',
+): {
   phase: TempoPhase | null;
   phaseElapsed: number;
   phaseRemaining: number;
+  phaseDuration: number;
 } {
-  const phases = activePhases(tempo);
+  const phases = activePhases(tempo, start);
   if (phases.length === 0) {
-    return { phase: null, phaseElapsed: 0, phaseRemaining: 0 };
+    return { phase: null, phaseElapsed: 0, phaseRemaining: 0, phaseDuration: 0 };
   }
   const total = tempoSeconds(tempo);
   const t = ((secondsIntoRep % total) + total) % total;
@@ -58,9 +83,15 @@ export function phaseAt(tempo: Tempo, secondsIntoRep: number): {
         phase: phase.name,
         phaseElapsed,
         phaseRemaining: phase.duration - phaseElapsed,
+        phaseDuration: phase.duration,
       };
     }
   }
   const last = phases[phases.length - 1];
-  return { phase: last.name, phaseElapsed: last.duration, phaseRemaining: 0 };
+  return {
+    phase: last.name,
+    phaseElapsed: last.duration,
+    phaseRemaining: 0,
+    phaseDuration: last.duration,
+  };
 }

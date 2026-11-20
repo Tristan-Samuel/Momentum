@@ -39,5 +39,8 @@ export const VISUAL_CUE_PRIORITY: CueKind[] = [
   'countdown',
   'rest_countdown',
   'phase_beep',
+  'lower',
+  'lift',
+  'hold',
   'tick',
 ];

@@ -17,6 +17,12 @@ export function toneFor(kind: CueKind, profile: SoundProfile): ToneSpec | null {
       return { frequency: 660, duration: 0.04, type: 'sine', gain: 0.08 * loud };
     case 'phase_beep':
       return { frequency: 880, duration: 0.09, type: 'sine', gain: 0.18 * loud };
+    case 'lower':
+      return { frequency: 349.23, duration: 0.18, type: 'sine', gain: 0.24 * loud };
+    case 'lift':
+      return { frequency: 880, duration: 0.14, type: 'triangle', gain: 0.28 * loud };
+    case 'hold':
+      return { frequency: 523.25, duration: 0.1, type: 'sine', gain: 0.12 * loud };
     case 'start':
       return { frequency: 523.25, duration: 0.22, type: 'triangle', gain: 0.28 * loud };
     case 'set_complete':

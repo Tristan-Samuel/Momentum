@@ -26,6 +26,7 @@ import {
 import { weakerLegReps } from '@/progression/algorithm';
 import { queueDeletes } from '@/sync/outbox';
 import { createId, midpointTarget, nowIso } from '@/utils/id';
+import { inferStartPosition, startPositionOf } from '@/utils/tempo';
 
 export async function ensureSeeded(): Promise<void> {
   const programCount = await db.workoutPrograms.count();
@@ -277,6 +278,7 @@ export async function addExerciseToProgram(
     minReps: number;
     maxReps: number;
     tempo: ExerciseConfiguration['tempo'];
+    startPosition?: ExerciseConfiguration['startPosition'];
     restAfterSetSeconds: number;
     transitionAfterExerciseSeconds: number;
     targetRirMin: number;
@@ -307,6 +309,7 @@ export async function addExerciseToProgram(
     minReps: input.minReps,
     maxReps: input.maxReps,
     tempo: input.tempo,
+    startPosition: startPositionOf(input.startPosition ?? inferStartPosition(input.name)),
     restAfterSetSeconds: input.restAfterSetSeconds,
     transitionAfterExerciseSeconds: input.transitionAfterExerciseSeconds,
     targetRirMin: input.targetRirMin,

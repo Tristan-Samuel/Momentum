@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ManualClock } from '@/timing-engine/clock';
 import { WorkoutEngine } from '@/workout-engine/engine';
 import { SET_START_DELAY } from '@/timing-engine/cues';
-import type { PreparedWorkout } from '@/types';
+import type { PreparedWorkout, StartPosition } from '@/types';
 
 function prepared(): PreparedWorkout {
   const stamp = '2026-01-01T00:00:00.000Z';
@@ -26,6 +26,7 @@ function prepared(): PreparedWorkout {
     minReps: min,
     maxReps: max,
     tempo: laterality === 'unilateral' ? { ...tempo, bottomPause: 1 } : tempo,
+    startPosition: (name === 'L-Sit Chin-Up' || name === 'Pull-Up' ? 'bottom' : 'top') as StartPosition,
     restAfterSetSeconds: rest,
     transitionAfterExerciseSeconds: 30,
     targetRirMin: 1,
@@ -136,17 +137,76 @@ describe('workout engine', () => {
   });
 
   it('moves to the next exercise after the last set', () => {
-    const { clock, engine } = engineWithClock();
+    const { engine } = engineWithClock();
     engine.skipSet();
     engine.sync();
     expect(engine.getView().kind).toBe('resting');
     engine.skipSet();
     engine.sync();
-    expect(engine.getView().kind).toBe('exercise_complete');
-    clock.advance(2.5);
+    const view = engine.getView();
+    expect(view.kind).toBe('exercise_transition');
+    expect(view.exerciseName).toBe('Pull-Up');
+    expect(view.restRemaining).toBeCloseTo(30, 0);
+    expect(view.restTotal).toBe(30);
+    expect(view.ratingExerciseName).toBe('L-Sit Chin-Up');
+    expect(view.canRate).toBe(true);
+  });
+
+  it('starts a bottom-position rep with the lift', () => {
+    const { clock, engine } = engineWithClock();
+    clock.advance(3);
     engine.sync();
-    expect(engine.getView().kind).toBe('exercise_transition');
-    expect(engine.getView().exerciseName).toBe('Pull-Up');
+    clock.advance(SET_START_DELAY + 0.05);
+    engine.sync();
+    expect(engine.getView().phase).toBe('concentric');
+    expect(engine.getView().phaseDuration).toBe(1);
+    clock.advance(1);
+    engine.sync();
+    expect(engine.getView().phase).toBe('eccentric');
+  });
+
+  it('keeps a rating on the exercise that just finished', () => {
+    const { clock, engine } = engineWithClock();
+    engine.skipSet();
+    engine.skipSet();
+    engine.rateCurrentExercise({ difficultyRating: 'too_hard', rir: 0, formQuality: null });
+    expect(engine.getView().rating.difficultyRating).toBe('too_hard');
+    expect(engine.getView().ratingNote).toMatch(/Saved/);
+    clock.advance(30);
+    engine.sync();
+    clock.advance(3);
+    engine.sync();
+    expect(engine.getView().kind).toBe('set_active');
+    expect(engine.getView().canRate).toBe(false);
+    engine.skipSet();
+    const next = engine.getView();
+    expect(next.ratingExerciseName).toBe('Pull-Up');
+    expect(next.rating.difficultyRating).toBeNull();
+    expect(next.rating.rir).toBeNull();
+  });
+
+  it('keeps a manual pause when the app is refocused', () => {
+    const { clock, engine } = engineWithClock();
+    engine.skipSet();
+    clock.advance(20);
+    engine.pause();
+    const remaining = engine.getView().restRemaining;
+    engine.handleVisibilityHidden();
+    engine.handleVisibilityVisible();
+    expect(engine.getView().kind).toBe('paused');
+    expect(engine.getView().pausedKind).toBe('resting');
+    expect(engine.getView().restRemaining).toBeCloseTo(remaining, 5);
+  });
+
+  it('pauses an active set in the background and leaves it paused', () => {
+    const { clock, engine } = engineWithClock();
+    clock.advance(3);
+    engine.sync();
+    expect(engine.getView().kind).toBe('set_active');
+    engine.handleVisibilityHidden();
+    engine.handleVisibilityVisible();
+    expect(engine.getView().kind).toBe('paused');
+    expect(engine.getView().pausedKind).toBe('set_active');
   });
 
   it('runs both pistol squat legs before completing the set', () => {
@@ -232,7 +292,7 @@ describe('workout engine', () => {
     const { clock, engine } = engineWithClock();
     for (let i = 0; i < 4; i++) {
       engine.skipExercise();
-      clock.advance(3);
+      clock.advance(i === 3 ? 12 : 3);
       engine.sync();
     }
     expect(engine.getView().kind).toBe('workout_complete');

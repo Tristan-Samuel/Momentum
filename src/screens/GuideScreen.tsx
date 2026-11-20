@@ -16,8 +16,8 @@ const SECTIONS: Section[] = [
     body: [
       'Home shows today’s sets and reps for each exercise. Start workout unlocks audio and begins a 3-2-1 countdown.',
       'During a set, follow the metronome through Lower, Pause, Lift, and Hold. When the set ends, confirm or edit completed reps from Controls if you need to.',
-      'After each exercise, rate how it felt (too easy / good / hard / too hard), RIR, and optional poor form. Those ratings feed next-session targets.',
-      'Rest is the timer between sets of the same exercise. Transition is the countdown after an exercise ends, before the next one starts. Review shows the session summary and any progression to apply.',
+      'After each exercise, rate how it felt (too easy / good / hard / too hard), RIR, and optional poor form. The line under the buttons says what that does to the next session. Each exercise starts with a blank rating.',
+      'Rest is only the timer between sets of the same exercise. After the last set, transition is the only countdown before the next exercise. There is no extra rest there. Review repeats what the rating changed.',
     ],
   },
   {
@@ -30,7 +30,8 @@ const SECTIONS: Section[] = [
   {
     title: 'Tempo, range, and RIR',
     body: [
-      'Tempo is written eccentric-bottom-concentric-top in seconds: lower, pause at the bottom, lift, pause at the top. Chin-up 3-0-1-0 is 3 seconds down, no pause, 1 second up, no hold at the top.',
+      'Tempo is written eccentric-bottom-concentric-top in seconds: lower, pause at the bottom, lift, pause at the top. The ring counts the phase you are in. Lower and lift use different tones. Chin-up 3-0-1-0 with lift first is 1 second up, then 3 seconds down.',
+      'Lift first is for movements that start at the bottom, such as pull-ups and chin-ups. Lower first is for movements that start at the top, such as push-ups and squats. Set it on each exercise.',
       'Min / max is the training range, not today’s count. The first session starts near the middle of the range (chin-up 6–10 starts at 2 × 8).',
       'RIR is reps in reserve — how many more you could have done with good form. Target 1–2 means stop 1 or 2 reps short of failure. Rate this after each exercise. RIR 0 holds the current targets.',
     ],

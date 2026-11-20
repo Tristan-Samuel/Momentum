@@ -12,6 +12,16 @@ function contextSuspended(ctx: AudioContext): boolean {
   return state === 'suspended' || state === 'interrupted';
 }
 
+/** Resume can hang (neither resolve nor reject) outside a user gesture. */
+function resumeContext(ctx: AudioContext): Promise<void> {
+  return Promise.race([
+    ctx.resume().then(() => undefined),
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 700);
+    }),
+  ]);
+}
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private stoppers: Stopper[] = [];
@@ -45,7 +55,7 @@ export class AudioEngine {
     this.ensureKeepAlive(ctx);
     if (contextSuspended(ctx)) {
       try {
-        await ctx.resume();
+        await resumeContext(ctx);
       } catch {
         /* iOS can reject resume outside a gesture */
       }
@@ -81,7 +91,7 @@ export class AudioEngine {
     }
     if (contextSuspended(ctx)) {
       try {
-        await ctx.resume();
+        await resumeContext(ctx);
       } catch {
         return false;
       }
@@ -111,6 +121,12 @@ export class AudioEngine {
       }
       if (kind === 'start') {
         this.playTone(ctx, start + 0.12, 784, 0.18, 'sine', spec.gain * this.volume * 0.55);
+      }
+      if (kind === 'lower') {
+        this.playTone(ctx, start + 0.1, 247, 0.16, 'sine', spec.gain * this.volume * 0.85);
+      }
+      if (kind === 'lift') {
+        this.playTone(ctx, start + 0.08, 1174, 0.12, 'triangle', spec.gain * this.volume * 0.7);
       }
     } catch {
       /* WebKit can reject schedule/ramp calls */
