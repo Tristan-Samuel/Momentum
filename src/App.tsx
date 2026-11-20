@@ -4,6 +4,7 @@ import { Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { useSettings } from '@/hooks/useSettings';
 import { AuthCallbackScreen } from '@/screens/AuthCallbackScreen';
+import { CoachScreen } from '@/screens/CoachScreen';
 import { ConfigureScreen } from '@/screens/ConfigureScreen';
 import { DashboardScreen } from '@/screens/DashboardScreen';
 import { HistoryDetailScreen } from '@/screens/HistoryDetailScreen';
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/history/:id" element={<HistoryDetailScreen />} />
           <Route path="/progress" element={<ProgressScreen />} />
           <Route path="/configure" element={<ConfigureScreen />} />
+          <Route path="/coach" element={<CoachScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/guide" element={<GuideScreen />} />
           <Route path="/auth/callback" element={<AuthCallbackScreen />} />

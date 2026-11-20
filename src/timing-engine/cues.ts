@@ -1,4 +1,4 @@
-import type { Laterality, Side, Tempo, TempoPhase, UnilateralOrder } from '@/types';
+import type { Laterality, Side, StartPosition, Tempo, TempoPhase, UnilateralOrder } from '@/types';
 import { activePhases, tempoSeconds } from '@/utils/tempo';
 
 export type RepSlot = {
@@ -66,9 +66,18 @@ export type CueKind =
   | 'start'
   | 'tick'
   | 'phase_beep'
+  | 'lower'
+  | 'lift'
+  | 'hold'
   | 'set_complete'
   | 'warning'
   | 'rest_countdown';
+
+export function phaseCueKind(phase: TempoPhase): 'lower' | 'lift' | 'hold' {
+  if (phase === 'eccentric') return 'lower';
+  if (phase === 'concentric') return 'lift';
+  return 'hold';
+}
 
 export type ScheduledCue = {
   at: number;
@@ -85,36 +94,31 @@ export function buildSetCues(
   tempo: Tempo,
   plan: RepSlot[],
   startAt: number,
+  startPosition: StartPosition = 'top',
 ): { cues: ScheduledCue[]; duration: number } {
   const cues: ScheduledCue[] = [];
   let t = startAt;
-  const phases = activePhases(tempo);
+  const phases = activePhases(tempo, startPosition);
 
   for (const slot of plan) {
     for (const phase of phases) {
-      for (let second = 0; second < phase.duration; second++) {
-        const at = t + second;
-        const isBoundaryOverlap = second === 0 && cues.some(
-          (cue) => cue.at === at && cue.kind === 'phase_beep',
-        );
-        if (!isBoundaryOverlap) {
-          cues.push({
-            at,
-            kind: 'tick',
-            rep: slot.repOnSide,
-            phase: phase.name,
-            side: slot.side,
-          });
-        }
-      }
-      t += phase.duration;
       cues.push({
         at: t,
-        kind: 'phase_beep',
+        kind: phaseCueKind(phase.name),
         rep: slot.repOnSide,
         phase: phase.name,
         side: slot.side,
       });
+      for (let second = 1; second < phase.duration; second++) {
+        cues.push({
+          at: t + second,
+          kind: 'tick',
+          rep: slot.repOnSide,
+          phase: phase.name,
+          side: slot.side,
+        });
+      }
+      t += phase.duration;
     }
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activePhases, formatTempo, phaseAt, tempoSeconds } from '@/utils/tempo';
+import { activePhases, formatTempo, inferStartPosition, phaseAt, tempoSeconds } from '@/utils/tempo';
 import { midpointTarget } from '@/utils/id';
 
 describe('tempo', () => {
@@ -22,6 +22,18 @@ describe('tempo', () => {
     expect(phaseAt(tempo, 0).phase).toBe('eccentric');
     expect(phaseAt(tempo, 2.9).phase).toBe('eccentric');
     expect(phaseAt(tempo, 3).phase).toBe('concentric');
+  });
+
+  it('starts at the bottom with the lift', () => {
+    expect(activePhases(tempo, 'bottom').map((phase) => phase.name)).toEqual([
+      'concentric',
+      'eccentric',
+    ]);
+    expect(phaseAt(tempo, 0, 'bottom').phase).toBe('concentric');
+    expect(phaseAt(tempo, 1, 'bottom').phase).toBe('eccentric');
+    expect(inferStartPosition('Pull-Up')).toBe('bottom');
+    expect(inferStartPosition('L-Sit Chin-Up')).toBe('bottom');
+    expect(inferStartPosition('Weighted / Difficult Push-Up')).toBe('top');
   });
 
   it('seeds midpoint targets', () => {

@@ -3,6 +3,7 @@ import type {
   FormQuality,
   Measure,
   Side,
+  StartPosition,
   TempoPhase,
 } from '@/types';
 
@@ -41,6 +42,9 @@ export type EngineSnapshotV1 = {
   }>;
   lastLoggedSetKey: string;
   status: 'in_progress' | 'completed' | 'aborted';
+  userPaused?: boolean;
+  ratingIndex?: number | null;
+  loggedReps?: number[][];
 };
 
 export type WorkoutView = {
@@ -59,6 +63,10 @@ export type WorkoutView = {
   currentRepDisplay: number;
   targetDisplay: number;
   phase: TempoPhase | null;
+  phaseElapsed: number;
+  phaseRemaining: number;
+  phaseDuration: number;
+  startPosition: StartPosition;
   side: Side | undefined;
   tempoLabel: string;
   tempoCompact: string;
@@ -71,11 +79,14 @@ export type WorkoutView = {
   nextTarget: number;
   elapsedWorkoutMs: number;
   canRate: boolean;
+  ratingExerciseName: string;
+  ratingNote: string;
   rating: {
     difficultyRating: DifficultyRating | null;
     rir: number | null;
     formQuality: FormQuality | null;
   };
+  upcomingGap: { kind: 'rest' | 'transition'; seconds: number } | null;
   resistanceLabel: string;
   laterality: 'bilateral' | 'unilateral';
   setCompleteReps: number;

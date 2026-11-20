@@ -6,9 +6,12 @@ import { Icon } from '@/components/ui/Icon';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { applyProgressionTargets } from '@/database/repository';
 import { useSessionDetail, useSessionInsights } from '@/hooks/useSessionInsights';
+import { explainProgression } from '@/progression/explain';
+import { weakerLegReps } from '@/progression/algorithm';
 import { formatRepList, unitSuffix } from '@/utils/prescription';
 import { workingAmount } from '@/utils/stats';
 import { formatDuration } from '@/utils/time';
+import type { ExerciseSession, SetSession } from '@/types';
 
 export function ReviewScreen() {
   const { id } = useParams();
@@ -85,6 +88,7 @@ export function ReviewScreen() {
                 previous={insight?.previous ?? null}
                 sameResistance={insight?.sameResistance ?? true}
               />
+              <p className="mt-3 text-sm leading-relaxed">{sessionNote(exercise, sets, insight?.previous ?? [])}</p>
               {progression?.recommendedResistanceChange?.type === 'increase' ? (
                 <div className="mt-4 rounded-2xl bg-[var(--accent-soft)] p-4">
                   <SectionLabel>Level up</SectionLabel>
@@ -109,13 +113,6 @@ export function ReviewScreen() {
                     Apply {nextResistance(progression.resistanceLabel)}
                   </Button>
                 </div>
-              ) : progression ? (
-                <p className="mt-3 text-sm text-[var(--muted)]">
-                  Next session: {formatRepList(progression.currentTargets, measure)}. Hit a set&apos;s
-                  target and it goes up by {exercise.configSnapshot.progressionStep ?? 1}
-                  {unitSuffix(measure)} next time, up to {exercise.configSnapshot.maxReps}
-                  {unitSuffix(measure)}.
-                </p>
               ) : null}
             </Card>
           );
@@ -135,6 +132,36 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       <p className="text-xs tracking-[0.18em] text-[var(--muted)]">{label.toUpperCase()}</p>
       <p className={`mt-2 text-3xl tabular-nums ${accent ? 'text-[var(--accent)]' : ''}`}>{value}</p>
     </div>
+  );
+}
+
+function countedReps(set: SetSession): number {
+  if (set.skipped) return 0;
+  if (set.leftReps != null || set.rightReps != null) return weakerLegReps(set.leftReps, set.rightReps);
+  return set.completedReps;
+}
+
+function sessionNote(exercise: ExerciseSession, sets: SetSession[], previous: number[]): string {
+  const completed = sets.filter((set) => !set.skipped);
+  return explainProgression(
+    {
+      sets: exercise.configSnapshot.sets,
+      minReps: exercise.configSnapshot.minReps,
+      maxReps: exercise.configSnapshot.maxReps,
+      targetRirMin: exercise.configSnapshot.targetRirMin,
+      targetRirMax: exercise.configSnapshot.targetRirMax,
+      currentTargets: exercise.targetRepsPerSet,
+      completedReps: completed.map(countedReps),
+      previousCompletedReps: previous,
+      rating: exercise.difficultyRating,
+      rir: exercise.rir,
+      formQuality: exercise.formQuality,
+      targetReduced: completed.some((set) => set.targetReduced),
+      resistanceLabel: exercise.configSnapshot.resistanceLabel,
+      step: exercise.configSnapshot.progressionStep ?? 1,
+    },
+    exercise.configSnapshot.measure,
+    'review',
   );
 }
 

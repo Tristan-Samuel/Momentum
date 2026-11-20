@@ -13,6 +13,7 @@ import type {
   WorkoutSession,
 } from '@/types';
 import { installOutboxHooks } from '@/sync/outbox';
+import { inferStartPosition } from '@/utils/tempo';
 
 export class MomentumDB extends Dexie {
   workoutPrograms!: EntityTable<WorkoutProgram, 'id'>;
@@ -67,6 +68,18 @@ export class MomentumDB extends Dexie {
             if (!settings.weeklyGoal) settings.weeklyGoal = 3;
           });
       });
+    this.version(3).upgrade(async (tx) => {
+      const exercises = await tx.table('exercises').toArray();
+      const names = new Map(exercises.map((row: Exercise) => [row.id, row.name]));
+      await tx
+        .table('exerciseConfigurations')
+        .toCollection()
+        .modify((config: Partial<ExerciseConfiguration>) => {
+          if (!config.startPosition) {
+            config.startPosition = inferStartPosition(names.get(config.exerciseId ?? '') ?? '');
+          }
+        });
+    });
   }
 }
 

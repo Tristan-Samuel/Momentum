@@ -14,7 +14,8 @@ import {
   unitSuffix,
 } from '@/utils/prescription';
 import { formatClock } from '@/utils/time';
-import type { DifficultyRating, FormQuality, TempoPhase } from '@/types';
+import { phaseOrder } from '@/utils/tempo';
+import type { DifficultyRating, FormQuality, StartPosition, TempoPhase } from '@/types';
 import type { WorkoutView } from '@/workout-engine/types';
 
 export function WorkoutScreen() {
@@ -62,6 +63,11 @@ export function WorkoutScreen() {
             <h1 className="mt-2 text-3xl font-semibold leading-tight tracking-tight">
               {view.exerciseName}
             </h1>
+            {view.canRate && view.ratingExerciseName && view.ratingExerciseName !== view.exerciseName ? (
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                Next exercise. Rate {view.ratingExerciseName} below before it starts.
+              </p>
+            ) : null}
             <p className="mt-2 text-sm text-[var(--muted)]">
               Today {view.setCount} × {formatRepList(view.targetRepsPerSet, view.measure)}
               {view.laterality === 'unilateral' ? ' per side' : ''}
@@ -103,12 +109,13 @@ export function WorkoutScreen() {
 
         {kind === 'set_active' && view.measure === 'reps' ? (
           <div className="space-y-4">
-            <TempoBar phase={view.phase} tempo={view.tempoCompact} />
+            <TempoBar phase={view.phase} tempo={view.tempoCompact} startPosition={view.startPosition} />
             <ProgressBar
               value={view.currentRep}
               max={view.actualTarget}
               label={`Rep ${view.currentRep} of ${view.actualTarget}`}
             />
+            {view.upcomingGap ? <GapLine gap={view.upcomingGap} /> : null}
           </div>
         ) : null}
 
@@ -125,6 +132,9 @@ export function WorkoutScreen() {
 
         {view.canRate ? (
           <RatingRow
+            key={`${view.ratingExerciseName}-${view.exerciseIndex}`}
+            name={view.ratingExerciseName}
+            note={view.ratingNote}
             rating={view.rating.difficultyRating}
             rir={view.rating.rir}
             form={view.rating.formQuality}
@@ -185,37 +195,80 @@ function SetDots({ count, current, kind }: { count: number; current: number; kin
   );
 }
 
-const PHASES: Array<{ id: TempoPhase; label: string }> = [
-  { id: 'eccentric', label: 'Lower' },
-  { id: 'bottomPause', label: 'Pause' },
-  { id: 'concentric', label: 'Lift' },
-  { id: 'topPause', label: 'Hold' },
-];
+const PHASE_LABEL: Record<TempoPhase, string> = {
+  eccentric: 'Lower',
+  bottomPause: 'Pause',
+  concentric: 'Lift',
+  topPause: 'Hold',
+};
 
-function TempoBar({ phase, tempo }: { phase: TempoPhase | null; tempo: string }) {
-  const seconds = tempo.split('-').map(Number);
+function TempoBar({
+  phase,
+  tempo,
+  startPosition,
+}: {
+  phase: TempoPhase | null;
+  tempo: string;
+  startPosition: StartPosition;
+}) {
+  const [eccentric, bottomPause, concentric, topPause] = tempo.split('-').map(Number);
+  const seconds: Record<TempoPhase, number> = {
+    eccentric,
+    bottomPause,
+    concentric,
+    topPause,
+  };
   return (
     <div className="grid grid-cols-4 gap-1.5" aria-label={`Tempo ${tempo}`}>
-      {PHASES.map((item, index) => {
-        const active = item.id === phase;
-        const skipped = seconds[index] === 0;
+      {phaseOrder(startPosition).map((id) => {
+        const active = id === phase;
+        const skipped = seconds[id] === 0;
         return (
           <div
-            key={item.id}
+            key={id}
             className={`rounded-2xl px-2 py-2 text-center transition-colors ${
               active
-                ? 'bg-[var(--accent)] text-white'
+                ? phaseTone(id)
                 : skipped
                   ? 'text-[var(--muted)] opacity-40'
                   : 'bg-[var(--line)]/50 text-[var(--muted)]'
             }`}
           >
-            <p className="text-xs tracking-[0.12em] uppercase">{item.label}</p>
-            <p className="text-sm tabular-nums">{seconds[index] ?? 0}s</p>
+            <p className="text-xs tracking-[0.12em] uppercase">{PHASE_LABEL[id]}</p>
+            <p className="text-sm tabular-nums">{seconds[id] ?? 0}s</p>
           </div>
         );
       })}
     </div>
+  );
+}
+
+function phaseTone(phase: TempoPhase): string {
+  if (phase === 'eccentric') return 'bg-[var(--warn)] text-white';
+  if (phase === 'concentric') return 'bg-[var(--accent)] text-white';
+  return 'bg-[var(--rest)] text-white';
+}
+
+function phaseColor(phase: TempoPhase | null): string {
+  if (phase === 'eccentric') return 'var(--warn)';
+  if (phase === 'concentric') return 'var(--accent)';
+  return 'var(--rest)';
+}
+
+function phaseRingLabel(phase: TempoPhase | null): string {
+  if (phase === 'eccentric') return 'LOWER';
+  if (phase === 'concentric') return 'LIFT';
+  if (phase === 'bottomPause') return 'PAUSE';
+  if (phase === 'topPause') return 'HOLD';
+  return 'REP';
+}
+
+function GapLine({ gap }: { gap: NonNullable<WorkoutView['upcomingGap']> }) {
+  const label = gap.kind === 'transition' ? 'transition' : 'rest';
+  return (
+    <p className="text-center text-sm text-[var(--muted)]">
+      Then {formatClock(gap.seconds)} {label}
+    </p>
   );
 }
 
@@ -233,7 +286,7 @@ function statusLabel(kind: string, paused: boolean): string {
     case 'exercise_complete':
       return 'EXERCISE COMPLETE';
     case 'exercise_transition':
-      return 'NEXT EXERCISE';
+      return 'TRANSITION';
     case 'workout_complete':
       return 'WORKOUT COMPLETE';
     default:
@@ -250,11 +303,12 @@ function statusColor(kind: string, paused: boolean): string {
 }
 
 function PrimaryStage({ view, kind }: { view: WorkoutView; kind: string }) {
-  if (view.kind === 'paused') {
+  const running = view.kind !== 'paused';
+  if (kind === 'paused') {
     return (
       <div className="text-center">
         <p className="text-5xl font-semibold">Paused</p>
-        <p className="mt-3 text-[var(--muted)]">Open Controls to resume.</p>
+        <p className="mt-3 text-[var(--muted)]">Open Controls to resume. Time stays held.</p>
       </div>
     );
   }
@@ -272,48 +326,42 @@ function PrimaryStage({ view, kind }: { view: WorkoutView; kind: string }) {
     if (view.switchingSides) {
       return (
         <RingCountdown
-          progress={1 - view.holdRemaining / 3}
+          key={`switch-${view.side ?? 'mid'}`}
+          remaining={view.holdRemaining}
+          total={3}
+          running={running}
           label="SWITCH SIDES"
-          remainingLabel={String(Math.max(1, Math.ceil(view.holdRemaining)))}
+          format="seconds"
           approaching
+          caption={running ? undefined : 'Held'}
         />
       );
     }
     return (
       <RingCountdown
-        progress={view.currentRep / Math.max(1, view.actualTarget)}
+        key={`hold-${view.setIndex}-${view.side ?? 'both'}`}
+        remaining={view.holdRemaining}
+        total={Math.max(1, view.actualTarget)}
+        running={running}
         label="HOLD"
-        remainingLabel={formatClock(view.holdRemaining)}
         approaching={view.holdRemaining <= 3}
         color="var(--accent)"
+        caption={running ? undefined : 'Held'}
       />
     );
   }
   if (kind === 'set_active') {
     return (
-      <div className="text-center" aria-live="polite">
-        <p className="text-xs tracking-[0.25em] text-[var(--muted)]">REP</p>
-        <p className="mt-2 text-9xl font-semibold tabular-nums leading-none">
-          {view.currentRep}
-          <span className="text-4xl text-[var(--muted)]"> / {view.actualTarget}</span>
-        </p>
-        {view.actualTarget <= 20 ? (
-          <div className="mt-6 flex flex-wrap justify-center gap-1.5" aria-hidden="true">
-            {Array.from({ length: view.actualTarget }, (_, index) => (
-              <span
-                key={index}
-                className={`h-2 w-2 rounded-full transition-colors ${
-                  index < view.currentRep - 1
-                    ? 'bg-[var(--fg)]'
-                    : index === view.currentRep - 1
-                      ? 'bg-[var(--accent)]'
-                      : 'bg-[var(--line)]'
-                }`}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
+      <RingCountdown
+        key={`${view.currentRep}-${view.phase ?? 'rep'}-${view.side ?? ''}`}
+        remaining={view.phaseRemaining}
+        total={Math.max(0.001, view.phaseDuration)}
+        running={running}
+        label={phaseRingLabel(view.phase)}
+        format="seconds"
+        color={phaseColor(view.phase)}
+        caption={`Rep ${view.currentRep} of ${view.actualTarget}${running ? '' : ' · Held'}`}
+      />
     );
   }
   if (kind === 'set_complete') {
@@ -344,10 +392,21 @@ function PrimaryStage({ view, kind }: { view: WorkoutView; kind: string }) {
     const remaining = view.restRemaining;
     return (
       <RingCountdown
-        progress={1 - remaining / total}
+        key={`${kind}-${view.exerciseIndex}-${view.setIndex}-${total}`}
+        remaining={remaining}
+        total={total}
+        running={running}
         label={kind === 'resting' ? 'REST' : 'TRANSITION'}
-        remainingLabel={formatClock(remaining)}
         approaching={view.approaching}
+        caption={
+          kind === 'exercise_transition'
+            ? running
+              ? 'Between exercises'
+              : 'Held'
+            : running
+              ? 'Between sets'
+              : 'Held'
+        }
       />
     );
   }
@@ -355,11 +414,15 @@ function PrimaryStage({ view, kind }: { view: WorkoutView; kind: string }) {
 }
 
 function RatingRow({
+  name,
+  note,
   rating,
   rir,
   form,
   onRate,
 }: {
+  name: string;
+  note: string;
   rating: DifficultyRating | null;
   rir: number | null;
   form: FormQuality | null;
@@ -376,8 +439,9 @@ function RatingRow({
       ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--fg)]'
       : 'border-[var(--line)] text-[var(--muted)]';
   return (
-    <section className="animate-fade-up mt-6" aria-label="How did that feel?">
-      <p className="text-xs tracking-[0.22em] text-[var(--muted)]">HOW DID THAT FEEL?</p>
+    <section className="animate-fade-up mt-6 rounded-3xl border border-[var(--line)] p-4" aria-label={`Rate ${name}`}>
+      <p className="text-xs tracking-[0.22em] text-[var(--muted)]">RATE {name.toUpperCase()}</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Saved on this exercise only. It changes the next session.</p>
       <div className="mt-3 grid grid-cols-4 gap-2">
         {options.map((option) => (
           <button
@@ -415,6 +479,7 @@ function RatingRow({
       >
         Form felt off
       </button>
+      {note ? <p className="mt-3 text-sm leading-relaxed">{note}</p> : null}
     </section>
   );
 }

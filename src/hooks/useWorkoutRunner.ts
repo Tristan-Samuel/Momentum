@@ -43,7 +43,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null, programId?: st
 
   useEffect(() => {
     let cancelled = false;
-    let raf = 0;
+    let timer = 0;
     let notificationsEnabled = false;
     let lastAlertKey: string | null = null;
     const clock = new PerformanceClock();
@@ -139,29 +139,33 @@ export function useWorkoutRunner(resumeSessionId?: string | null, programId?: st
 
         await flush(engine);
         if (cancelled) return;
-        const initial = engine.getView();
-        setView(initial);
-        syncRestAlert(initial);
 
-        const loop = () => {
-          if (cancelled || !engineRef.current) return;
-          const next = engineRef.current.sync();
-          setView({ ...next });
+        let lastStamp = '';
+        let finished = false;
+        const publish = (force = false) => {
+          const current = engineRef.current;
+          if (!current || cancelled || finished) return;
+          const next = current.sync();
+          const stamp = viewStamp(next);
+          if (force || stamp !== lastStamp) {
+            lastStamp = stamp;
+            setView(next);
+          }
           syncRestAlert(next);
-          const events = engineRef.current.drainEvents();
+          const events = current.drainEvents();
           if (next.kind === 'workout_complete') {
+            finished = true;
+            window.clearInterval(timer);
             void wakeLock.release();
             void persistEngineEvents(events).then(() => {
               navigate(`/review/${next.sessionId}`, { replace: true });
             });
             return;
           }
-          if (events.length > 0) {
-            void persistEngineEvents(events);
-          }
-          raf = requestAnimationFrame(loop);
+          if (events.length > 0) void persistEngineEvents(events);
         };
-        raf = requestAnimationFrame(loop);
+        publish(true);
+        if (!finished) timer = window.setInterval(() => publish(), 100);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not start workout');
       }
@@ -178,8 +182,19 @@ export function useWorkoutRunner(resumeSessionId?: string | null, programId?: st
       } else {
         engine.handleVisibilityVisible();
         const current = engine.getView();
-        if (current.kind === 'resting' && current.restRemaining <= 0) {
-          notifyRestComplete('Momentum', 'Rest is over. Next set.');
+        setView(current);
+        const liveKind = current.kind === 'paused' ? current.pausedKind : current.kind;
+        if (
+          current.kind !== 'paused' &&
+          (liveKind === 'resting' || liveKind === 'exercise_transition') &&
+          current.restRemaining <= 0
+        ) {
+          notifyRestComplete(
+            'Momentum',
+            liveKind === 'exercise_transition'
+              ? 'Transition is over. Next exercise.'
+              : 'Rest is over. Next set.',
+          );
         }
         void audioEngine.unlock();
         void wakeLock.request();
@@ -191,7 +206,7 @@ export function useWorkoutRunner(resumeSessionId?: string | null, programId?: st
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
+      window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', onVisibility);
       audioEngine.cancel();
@@ -201,4 +216,32 @@ export function useWorkoutRunner(resumeSessionId?: string | null, programId?: st
   }, [navigate, resumeSessionId, programId]);
 
   return { view, error, controls };
+}
+
+function viewStamp(view: WorkoutView): string {
+  return [
+    view.kind,
+    view.pausedKind,
+    view.exerciseIndex,
+    view.setIndex,
+    view.phase,
+    view.currentRep,
+    view.side,
+    view.countdown,
+    Math.ceil(view.restRemaining),
+    Math.ceil(view.holdRemaining),
+    Math.ceil(view.phaseRemaining),
+    view.actualTarget,
+    view.canRate,
+    view.ratingExerciseName,
+    view.rating.difficultyRating,
+    view.rating.rir,
+    view.rating.formQuality,
+    view.ratingNote,
+    Math.floor(view.elapsedWorkoutMs / 1000),
+    view.switchingSides,
+    view.workoutComplete,
+    view.upcomingGap?.kind,
+    view.upcomingGap?.seconds,
+  ].join('|');
 }

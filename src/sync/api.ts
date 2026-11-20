@@ -85,3 +85,10 @@ export function fetchSnapshot(token: string): Promise<BackupEnvelope> {
 export function revokeToken(token: string): Promise<unknown> {
   return request('/api/logout', { method: 'POST', token });
 }
+
+export function askCoach(
+  token: string,
+  body: { task: string; note: string; context: unknown },
+): Promise<unknown> {
+  return request('/api/coach', { method: 'POST', token, body });
+}

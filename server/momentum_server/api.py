@@ -4,7 +4,7 @@ from functools import wraps
 
 from flask import Flask, current_app, g, jsonify, request
 
-from momentum_server import store
+from momentum_server import coach, store
 
 BACKUP_FORMAT = "momentum-backup"
 BACKUP_VERSION = 1
@@ -99,6 +99,37 @@ def register_api(app: Flask) -> None:
     def api_logout():
         store.revoke_token(g.api_user["token_id"])
         return jsonify({"ok": True})
+
+    @app.post("/api/coach")
+    @bearer_required
+    def api_coach():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Expected a JSON object."}), 400
+        api_key = current_app.config.get("GEMINI_API_KEY", "")
+        transport = current_app.config.get("GEMINI_TRANSPORT")
+        if not api_key and transport is None:
+            return jsonify({"error": "Gemini is not configured on tssamuel.com yet."}), 503
+
+        def complete(prompt: str) -> str:
+            if transport is not None:
+                return transport(prompt)
+            return coach.complete_with_gemini(
+                prompt,
+                api_key=api_key,
+                model=current_app.config.get("GEMINI_MODEL") or "gemini-2.5-flash",
+            )
+
+        try:
+            reply = coach.interpret(
+                str(body.get("task") or ""),
+                body.get("note") if isinstance(body.get("note"), str) else "",
+                body.get("context"),
+                complete,
+            )
+        except coach.CoachError as exc:
+            return jsonify({"error": str(exc)}), exc.status
+        return jsonify(reply)
 
 
 def _group(records: list) -> dict[str, list]:

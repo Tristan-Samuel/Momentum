@@ -44,7 +44,7 @@ describe('rep plan', () => {
 describe('set cues', () => {
   const tempo = { eccentric: 3, bottomPause: 0, concentric: 1, topPause: 0 };
 
-  it('ticks each eccentric second then phase-beeps', () => {
+  it('opens each phase with its own cue', () => {
     const plan = buildRepPlan({
       laterality: 'bilateral',
       unilateralOrder: 'right-then-left',
@@ -52,10 +52,18 @@ describe('set cues', () => {
     });
     const { cues, duration } = buildSetCues(tempo, plan, 0);
     expect(duration).toBe(4);
-    const kinds = cues.map((cue) => cue.kind);
-    expect(kinds.filter((kind) => kind === 'tick')).toHaveLength(3);
-    expect(kinds).toContain('phase_beep');
-    expect(kinds.at(-1)).toBe('set_complete');
+    expect(cues.map((cue) => cue.kind)).toEqual(['lower', 'tick', 'tick', 'lift', 'set_complete']);
+  });
+
+  it('starts a bottom-position rep with the lift', () => {
+    const plan = buildRepPlan({
+      laterality: 'bilateral',
+      unilateralOrder: 'right-then-left',
+      target: 1,
+    });
+    const { cues } = buildSetCues(tempo, plan, 0, 'bottom');
+    expect(cues[0]).toMatchObject({ kind: 'lift', phase: 'concentric' });
+    expect(cues.find((cue) => cue.kind === 'lower')?.phase).toBe('eccentric');
   });
 
   it('accounts for a bottom pause', () => {
