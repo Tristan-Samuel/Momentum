@@ -35,6 +35,11 @@ install_units() {
   systemctl daemon-reload
   systemctl enable --now momentum-update.service
   systemctl restart momentum-update.service
+  if ! command -v ideviceinstaller >/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y ideviceinstaller
+  fi
 }
 
 if [[ "${1:-}" == "--units-only" ]]; then
@@ -65,6 +70,7 @@ apt-get install -y \
   git \
   ldc \
   libavahi-compat-libdnssd1 \
+  ideviceinstaller \
   libimobiledevice-utils \
   libplist-dev \
   libssl-dev \

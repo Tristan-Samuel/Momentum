@@ -58,6 +58,20 @@ class RefreshDecisionTest(unittest.TestCase):
         self.assertEqual(action, "install")
         self.assertIn("new build", reason)
 
+    def test_an_upgrade_keeps_the_original_bundle_id(self):
+        self.assertEqual(resign.install_plan("H37YJZ72LS.com.momentum.workout"), "upgrade")
+
+    def test_a_renamed_bundle_id_is_a_different_app(self):
+        self.assertEqual(resign.install_plan("H37YJZ72LS.com.momentum.workout.H37YJZ72LS"), "other")
+        self.assertEqual(
+            resign.bundle_id_from_application_identifier("H37YJZ72LS.com.momentum.workout.H37YJZ72LS"),
+            "com.momentum.workout.H37YJZ72LS",
+        )
+
+    def test_an_unsigned_build_is_not_installed(self):
+        self.assertEqual(resign.install_plan(None), "unsigned")
+        self.assertEqual(resign.install_plan(""), "unsigned")
+
     def test_a_missing_phone_restarts_the_bridge_once_and_then_appears(self):
         calls = {"listed": 0, "restart": 0}
 

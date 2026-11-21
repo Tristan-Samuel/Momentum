@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build an unsigned Momentum IPA on the Mac. The Pi re-signs it.
+# Build a signed Momentum IPA. The signature stays com.momentum.workout, the app the phone already has.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -27,9 +27,7 @@ xcodebuild \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY="" \
+  -allowProvisioningUpdates \
   archive
 
 APP=$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)

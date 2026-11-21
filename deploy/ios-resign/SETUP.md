@@ -26,24 +26,15 @@ Unlock the iPhone on the same Wi-Fi as the Mac. From the Momentum repo on the Ma
 npm run ios:setup
 ```
 
-The Mac reaches the Pi over SSH. Nothing plugs into the Pi.
-
-Answer the dialogs:
-
-1. The Pi sudo password, if one appears.
-2. The Apple ID for the free developer team.
-3. The Apple ID password. Use the account password, not an app-specific password.
-4. The verification code, if Apple sends one.
+The Mac reaches the Pi over SSH. Nothing plugs into the Pi. Xcode signs the app during the build, as `com.momentum.workout`. A Pi sudo dialog may appear.
 
 ## 3. Let the Pi install it
 
 Unlock the iPhone on the Pi's home Wi-Fi and leave it unlocked. The Pi is on `192.168.7.x`. The phone has to be on that network. Tailscale does not count, and the Mac's Wi-Fi does not count when it is a different network.
 
-The Pi checks every 30 minutes. It installs a new build, or a signature that is due, when it can see the phone. You can also tap **Update now** in the app. You do not run another command. If the Wi-Fi bridge has lost the phone, that check restarts the bridge and looks again. The phone still has to be unlocked on the home Wi-Fi.
+The Mac signs the build as `com.momentum.workout`, the app already on the phone. The Pi installs that signature over it. The Pi checks every 30 minutes, and **Update now** starts the same install. If the Wi-Fi bridge has lost the phone, the check restarts the bridge and looks again. The phone has to be unlocked on the home Wi-Fi.
 
-Apple no longer accepts the Pi's own anisette server. Sign-in uses `https://new.ani.sidestore.io` for the Mac identity only. The Apple ID password still goes only to Apple, and the identity is stored on the Pi after the first sign-in.
-
-If iOS asks you to trust the developer again, use **Settings → General → VPN & Device Management**, then open Momentum.
+That install does not rename the app and does not remove its provisioning profile. The workouts stay, and iOS does not ask you to trust the developer again. Keep the icon that already has your workouts. An icon that says the developer is not trusted is a second app.
 
 ## 4. After you change the app
 

@@ -31,6 +31,7 @@ export function AccountSection() {
   const pending = useLiveQuery(() => db.outbox.count(), [], 0);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [statusWarn, setStatusWarn] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const restoreAbort = useRef<AbortController | null>(null);
   const [remote, setRemote] = useState<RemoteAccount | null>(null);
@@ -51,14 +52,16 @@ export function AccountSection() {
 
   if (account === undefined) return null;
 
-  const run = async (label: string, task: () => Promise<string | null | void>) => {
+  const run = async (label: string, task: () => Promise<string | null | void>, pending?: string) => {
     setBusy(label);
-    setStatus(null);
+    setStatusWarn(false);
+    setStatus(pending ?? null);
     try {
       const message = await task();
       if (message) setStatus(message);
     } catch (err) {
       if (!(err instanceof SignInCancelled)) {
+        setStatusWarn(true);
         setStatus(err instanceof Error ? err.message : 'Something went wrong.');
       }
     } finally {
@@ -121,9 +124,22 @@ export function AccountSection() {
               <Button
                 variant={localWorkouts === 0 ? 'accent' : 'ghost'}
                 disabled={busy !== null}
-                onClick={() => setConfirm('restore')}
+                onClick={() => {
+                  if (localWorkouts > 0) {
+                    setConfirm('restore');
+                    return;
+                  }
+                  void run(
+                    'restore',
+                    async () => {
+                      const summary = await restoreFromServer();
+                      return `Restored ${summary.workouts} workout${summary.workouts === 1 ? '' : 's'} and ${summary.programs} program${summary.programs === 1 ? '' : 's'}.`;
+                    },
+                    'Restoring…',
+                  );
+                }}
               >
-                Restore to this {device}
+                {busy === 'restore' ? 'Restoring…' : `Restore to this ${device}`}
               </Button>
               <Button
                 variant={localWorkouts === 0 ? 'ghost' : 'accent'}
@@ -196,7 +212,9 @@ export function AccountSection() {
             </button>
           </>
         )}
-        {status ? <p className="mt-3 text-sm text-[var(--muted)]">{status}</p> : null}
+        {status ? (
+          <p className={`mt-3 text-sm ${statusWarn ? 'text-[var(--warn)]' : 'text-[var(--muted)]'}`}>{status}</p>
+        ) : null}
       </Card>
 
       <ConfirmDialog

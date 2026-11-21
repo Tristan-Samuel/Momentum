@@ -201,6 +201,7 @@ class Settings:
     refresh_after: timedelta
     idevice_id: str
     ideviceinfo: str
+    ideviceinstaller: str
 
     @property
     def configured(self) -> bool:
@@ -216,6 +217,7 @@ def settings_from_env(env: dict[str, str] | None = None) -> Settings:
         refresh_after = REFRESH_AFTER
     idevice_id = source.get("IDEVICE_ID") or shutil.which("idevice_id") or "idevice_id"
     ideviceinfo = source.get("IDEVICEINFO") or shutil.which("ideviceinfo") or "ideviceinfo"
+    ideviceinstaller = source.get("IDEVICEINSTALLER") or shutil.which("ideviceinstaller") or "ideviceinstaller"
     return Settings(
         apple_id=source.get("APPLE_ID", "").strip(),
         password=source.get("APPLE_PASSWORD", ""),
@@ -230,7 +232,34 @@ def settings_from_env(env: dict[str, str] | None = None) -> Settings:
         refresh_after=refresh_after,
         idevice_id=idevice_id,
         ideviceinfo=ideviceinfo,
+        ideviceinstaller=ideviceinstaller,
     )
+
+
+EXPECTED_BUNDLE = "com.momentum.workout"
+
+
+def bundle_id_from_application_identifier(value: str | None) -> str | None:
+    """`TEAMID.com.momentum.workout` -> `com.momentum.workout`."""
+    if not value or "." not in value:
+        return None
+    bundle = value.split(".", 1)[1]
+    return bundle or None
+
+
+def install_plan(application_identifier: str | None, expected: str = EXPECTED_BUNDLE) -> str:
+    """How to install a signature.
+
+    `upgrade` replaces the existing app and keeps its data.
+    `other` is a different bundle id, which iOS installs as a new app.
+    `unsigned` has no provisioning profile.
+    """
+    bundle = bundle_id_from_application_identifier(application_identifier)
+    if bundle == expected:
+        return "upgrade"
+    if bundle:
+        return "other"
+    return "unsigned"
 
 
 def _udids(text: str) -> set[str]:
@@ -304,40 +333,48 @@ def probe_device(settings: Settings) -> tuple[bool, bool]:
     return False, False
 
 
-def _read_two_fa(path: Path) -> str | None:
+def application_identifier_from_profile(profile: bytes) -> str | None:
+    completed = subprocess.run(
+        ["openssl", "smime", "-inform", "der", "-verify", "-noverify"],
+        input=profile,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0 or not completed.stdout:
+        return None
     try:
-        code = path.read_text().strip()
-    except OSError:
+        payload = plistlib.loads(completed.stdout)
+    except Exception:
         return None
-    if not code:
+    entitlements = payload.get("Entitlements") if isinstance(payload, dict) else None
+    if not isinstance(entitlements, dict):
         return None
-    path.unlink(missing_ok=True)
-    return code
+    value = entitlements.get("application-identifier")
+    return value if isinstance(value, str) else None
 
 
-def install_ipa(settings: Settings) -> bool:
-    if not settings.altserver.is_file():
-        print(f"momentum-resign: AltServer is missing at {settings.altserver}", file=sys.stderr)
-        return False
-    code = _read_two_fa(settings.two_fa)
-    env = os.environ.copy()
-    env["ALTSERVER_ANISETTE_SERVER"] = settings.anisette_url
-    env.setdefault("ALTSERVER_ANISETTE_PROTOCOL", "v3")
-    # systemd does not set HOME. AltServer keeps the Mac identity under XDG_CONFIG_HOME.
-    config_home = env.get("XDG_CONFIG_HOME") or "/var/lib/momentum-resign"
-    env["XDG_CONFIG_HOME"] = config_home
-    Path(config_home).mkdir(parents=True, exist_ok=True)
+def embedded_application_identifier(ipa: Path) -> str | None:
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(ipa) as archive:
+            name = next(item for item in archive.namelist() if item.endswith("embedded.mobileprovision"))
+            profile = archive.read(name)
+    except (OSError, zipfile.BadZipFile, StopIteration):
+        return None
+    return application_identifier_from_profile(profile)
+
+
+def install_signed_ipa(settings: Settings) -> bool:
+    """Replace the existing app. The provisioning profile stays, so trust stays with it."""
     command = [
-        str(settings.altserver),
+        settings.ideviceinstaller,
+        "-n",
         "-u",
         settings.udid,
-        "-a",
-        settings.apple_id,
-        "-p",
-        settings.password,
+        "upgrade",
         str(settings.ipa),
     ]
-    run_kwargs: dict = {"input": f"{code}\n"} if code else {"stdin": subprocess.DEVNULL}
     try:
         completed = subprocess.run(
             command,
@@ -345,21 +382,31 @@ def install_ipa(settings: Settings) -> bool:
             capture_output=True,
             text=True,
             timeout=INSTALL_TIMEOUT,
-            env=env,
-            **run_kwargs,
         )
     except subprocess.TimeoutExpired:
-        print("momentum-resign: AltServer timed out", file=sys.stderr)
+        print("momentum-resign: install timed out", file=sys.stderr)
         return False
-    output = redact((completed.stdout or "") + (completed.stderr or ""), settings.password)
-    tail = "\n".join(output.strip().splitlines()[-40:])
+    output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    tail = "\n".join(output.splitlines()[-20:])
     if tail:
         print(tail)
-    lowered = output.lower()
-    if any(phrase in lowered for phrase in ("verification code", "two-factor", "two factor", "security code")):
-        print(f"momentum-resign: write the Apple code to {settings.two_fa} and the next run will send it")
-    succeeded = completed.returncode == 0 and "Installation Succeeded" in output and "Could not install" not in output
-    return succeeded
+    return completed.returncode == 0
+
+
+def install_ipa(settings: Settings) -> str | None:
+    """Upgrade the installed app. Return an error reason, or None on success."""
+    identifier = embedded_application_identifier(settings.ipa)
+    plan = install_plan(identifier)
+    if plan == "other":
+        bundle = bundle_id_from_application_identifier(identifier)
+        return f"Refused a signature for {bundle}. That would install a second app."
+    if plan == "unsigned":
+        return "Refused an unsigned build. Signing it here would rename the app and ask for trust again."
+    if not shutil.which(settings.ideviceinstaller) and not Path(settings.ideviceinstaller).is_file():
+        return f"ideviceinstaller is missing at {settings.ideviceinstaller}"
+    if install_signed_ipa(settings):
+        return None
+    return "The upgrade failed."
 
 
 def usbmux_plist_packet(payload: dict, tag: int = 1) -> bytes:
@@ -466,9 +513,10 @@ def main(argv: list[str] | None = None) -> int:
     if forced:
         settings.force.unlink(missing_ok=True)
     write_status(settings.status, "installing", reason, now)
-    if not install_ipa(settings):
-        print("momentum-resign: install failed", file=sys.stderr)
-        write_status(settings.status, "failed", "install failed", now)
+    failure = install_ipa(settings)
+    if failure:
+        print(f"momentum-resign: {failure}", file=sys.stderr)
+        write_status(settings.status, "failed", failure, now)
         return 1
     write_state(settings.state, now, current_mtime)
     write_status(settings.status, "installed", "installed", now)
