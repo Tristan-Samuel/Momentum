@@ -209,6 +209,44 @@ def test_coach_reports_gemini_when_it_stays_busy(client, auth, app, monkeypatch)
     assert "Gemini could not answer" in response.get_json()["error"]
 
 
+def test_coach_sends_the_whole_log_to_gemini():
+    seen = {}
+
+    def transport(prompt: str) -> str:
+        seen["prompt"] = prompt
+        return json.dumps(
+            {
+                "summary": "Looked at both days.",
+                "recommendations": [{"exerciseConfigId": "squat", "note": "Keep the squat where it is."}],
+            }
+        )
+
+    reply = interpret(
+        "analyze",
+        "what should change this week?",
+        {
+            "brief": "# Schedule\nMorning rotation.\n# Adding an exercise\nsets: 1 to 10\n# How the app works\nRest is only between sets.",
+            "focusProgramId": None,
+            "programs": [
+                {"id": "pull", "name": "Pull", "exercises": [{"exerciseConfigId": "pull-up"}]},
+                {"id": "legs", "name": "Legs", "exercises": [{"exerciseConfigId": "squat"}]},
+            ],
+        },
+        transport,
+    )
+
+    prompt = seen["prompt"]
+    structured = prompt.split("Structured context:", 1)[1]
+    assert "Morning rotation." in prompt
+    assert "# Adding an exercise" in prompt
+    assert "# How the app works" in prompt
+    assert "Do not limit a question" in prompt
+    assert "squat" in structured
+    assert '"brief"' not in structured
+    assert reply["recommendations"][0]["exerciseConfigId"] == "squat"
+    assert reply["program"] is None
+
+
 def test_unknown_edit_id_is_rejected():
     try:
         interpret(
