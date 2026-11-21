@@ -16,6 +16,8 @@ Skip this if Momentum is already on the phone and you have opened it.
 
 Leave the Momentum icon on the home screen. Deleting it deletes the workouts.
 
+The Pi signs one iPhone, the one stored as `DEVICE_UDID`. Another phone in the house gets the app from Xcode: unlock it, plug it into the Mac, trust the computer, turn on Developer Mode, select that iPhone, and press Run. They sign into their own tssamuel.com account. Signing into yours copies your workouts onto their phone and uploads theirs into your backup. Their free signature lasts 7 days, so plug that phone into the Mac and press Run again before it expires. Do not run `npm run ios:setup` for their phone. That command keeps refreshing yours. Use the same Apple ID the next time that phone is signed, or iOS starts a fresh copy with no workouts.
+
 ## 2. Give the Pi the app
 
 Unlock the iPhone on the same Wi-Fi as the Mac. From the Momentum repo on the Mac:

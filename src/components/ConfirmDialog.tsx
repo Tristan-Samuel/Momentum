@@ -9,6 +9,8 @@ type Props = {
   cancelLabel?: string;
   danger?: boolean;
   busy?: boolean;
+  /** When set, overrides whether Cancel stays clickable while `busy` is true. */
+  cancelDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -22,6 +24,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   danger = false,
   busy = false,
+  cancelDisabled,
   onConfirm,
   onCancel,
 }: Props) {
@@ -43,7 +46,7 @@ export function ConfirmDialog({
           <Button variant={danger ? 'danger' : 'primary'} disabled={busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
-          <Button variant="ghost" disabled={busy} onClick={onCancel}>
+          <Button variant="ghost" disabled={cancelDisabled ?? busy} onClick={onCancel}>
             {cancelLabel}
           </Button>
         </div>

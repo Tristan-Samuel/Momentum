@@ -349,7 +349,7 @@ npx cap run ios
 npx cap run android
 ```
 
-When the Pi is already refreshing the phone, run `npm run ios:setup` again instead of another Xcode Run. That copies the new IPA to the Pi. The Pi installs it when the iPhone is unlocked on the home Wi-Fi. On the phone, Settings → **Update now** starts that install immediately.
+When the Pi is already refreshing the phone, run `npm run ios:setup` again instead of another Xcode Run. That copies the new IPA to the Pi. The Pi installs it when the iPhone is unlocked on the home Wi-Fi. On the phone, Settings → **Update now** starts that install immediately. The Pi refreshes that paired iPhone only. Another phone in the house is installed with Xcode Run, and that person signs into their own tssamuel.com account.
 
 `cap:sync` rebuilds `dist/` and copies it into `ios/` and `android/`. Skipping it leaves the phone on the old bundle.
 

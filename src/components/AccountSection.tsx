@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -32,6 +32,7 @@ export function AccountSection() {
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const restoreAbort = useRef<AbortController | null>(null);
   const [remote, setRemote] = useState<RemoteAccount | null>(null);
   const [localWorkouts, setLocalWorkouts] = useState(0);
   const choosing = isSignedIn(account) && !account.initialSyncDone;
@@ -203,16 +204,22 @@ export function AccountSection() {
         eyebrow="RESTORE"
         title={`Replace this ${device}'s data?`}
         body={`Programs, workouts, and records on this ${device} are replaced with the copy on ${host}.`}
-        confirmLabel="Restore"
+        confirmLabel={busy === 'restore' ? 'Restoring…' : 'Restore'}
         danger
         busy={busy === 'restore'}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() =>
+        cancelDisabled={false}
+        onCancel={() => {
+          restoreAbort.current?.abort();
+          setConfirm(null);
+        }}
+        onConfirm={() => {
+          const controller = new AbortController();
+          restoreAbort.current = controller;
           void run('restore', async () => {
-            const summary = await restoreFromServer();
+            const summary = await restoreFromServer(controller.signal);
             return `Restored ${summary.workouts} workout${summary.workouts === 1 ? '' : 's'} and ${summary.programs} program${summary.programs === 1 ? '' : 's'}.`;
-          }).finally(() => setConfirm(null))
-        }
+          }).finally(() => setConfirm(null));
+        }}
       />
       <ConfirmDialog
         open={confirm === 'replace-server'}

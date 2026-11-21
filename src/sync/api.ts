@@ -3,6 +3,7 @@ import type { SyncTable } from '@/types';
 
 export const SYNC_URL = (import.meta.env.VITE_SYNC_URL || 'https://momentum.tssamuel.com').replace(/\/$/, '');
 export const PUSH_BATCH = 500;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export type PushRecord =
   | { table: SyncTable; id: string; data: Record<string, unknown> }
@@ -35,6 +36,11 @@ export class SyncHttpError extends Error {
   }
 }
 
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 async function request<T>(
   path: string,
   {
@@ -42,20 +48,28 @@ async function request<T>(
     token,
     body,
     credentials,
-  }: { method?: string; token?: string; body?: unknown; credentials?: RequestCredentials } = {},
+    signal,
+  }: { method?: string; token?: string; body?: unknown; credentials?: RequestCredentials; signal?: AbortSignal } = {},
 ): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${SYNC_URL}${path}`, {
       method,
       credentials,
+      signal: requestSignal(signal),
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new SyncHttpError(0, 'tssamuel.com took too long to answer.');
+    }
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new SyncHttpError(0, 'Cancelled.');
+    }
     throw new SyncHttpError(0, 'Offline or tssamuel.com is unreachable.');
   }
   const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -103,8 +117,8 @@ export function fetchWebToken(): Promise<{ token: string; user: { email: string;
   return request('/api/web/token', { method: 'POST', body: {}, credentials: 'include' });
 }
 
-export function fetchSnapshot(token: string): Promise<BackupEnvelope> {
-  return request('/api/sync/snapshot', { token });
+export function fetchSnapshot(token: string, signal?: AbortSignal): Promise<BackupEnvelope> {
+  return request('/api/sync/snapshot', { token, signal });
 }
 
 export function revokeToken(token: string): Promise<unknown> {

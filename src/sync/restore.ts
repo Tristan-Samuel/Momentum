@@ -6,11 +6,11 @@ import { exclusive, uploadEverything } from '@/sync/engine';
 import { deviceLabel, type SignInResult } from '@/platform/webAuth';
 
 /** Replaces this phone's data with what tssamuel.com has. */
-export function restoreFromServer(): Promise<{ workouts: number; programs: number }> {
+export function restoreFromServer(signal?: AbortSignal): Promise<{ workouts: number; programs: number }> {
   return exclusive(async () => {
     const account = await getAccount();
     if (!isSignedIn(account)) throw new Error('Sign in first.');
-    const snapshot = await fetchSnapshot(account.token);
+    const snapshot = await fetchSnapshot(account.token, signal);
     const envelope = normalizeEnvelope(snapshot.tables, snapshot.exportedAt);
     await importAll(envelope);
     await saveAccount({ initialSyncDone: true, lastPushAt: new Date().toISOString(), lastError: null });
