@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { formatClock } from '@/utils/time';
 
 type Props = {
@@ -10,6 +10,10 @@ type Props = {
   color?: string;
   approaching?: boolean;
   caption?: string;
+  /** Large readout drawn in the middle. The ticking time stays visible beneath it. */
+  center?: ReactNode;
+  /** Spoken description of `center`, included in the timer name. */
+  centerLabel?: string;
 };
 
 const RADIUS = 88;
@@ -38,17 +42,21 @@ export function RingCountdown({
   color,
   approaching,
   caption,
+  center,
+  centerLabel,
 }: Props) {
   const circleRef = useRef<SVGCircleElement>(null);
   const numberRef = useRef<HTMLParagraphElement>(null);
-  const live = useRef({ remaining, total, running, format, at: performance.now() });
+  const unit = center && format === 'seconds' ? 's' : '';
+  const live = useRef({ remaining, total, running, format, unit, at: performance.now() });
   if (
     live.current.remaining !== remaining ||
     live.current.total !== total ||
     live.current.running !== running ||
-    live.current.format !== format
+    live.current.format !== format ||
+    live.current.unit !== unit
   ) {
-    live.current = { remaining, total, running, format, at: performance.now() };
+    live.current = { remaining, total, running, format, unit, at: performance.now() };
   }
 
   useEffect(() => {
@@ -58,7 +66,9 @@ export function RingCountdown({
       const span = snap.total > 0 ? snap.total : 1;
       const progress = Math.min(1, Math.max(0, 1 - left / span));
       circleRef.current?.setAttribute('stroke-dashoffset', String(CIRC * (1 - progress)));
-      if (numberRef.current) numberRef.current.textContent = formatRemaining(left, snap.format);
+      if (numberRef.current) {
+        numberRef.current.textContent = `${formatRemaining(left, snap.format)}${snap.unit}`;
+      }
     };
     paint();
     const timer = window.setInterval(paint, 50);
@@ -68,13 +78,17 @@ export function RingCountdown({
   const initialLeft = Math.max(0, remaining);
   const initialProgress = Math.min(1, Math.max(0, 1 - initialLeft / (total > 0 ? total : 1)));
   const stroke = approaching ? 'var(--warn)' : color ?? 'var(--rest)';
+  const initialTime = `${formatRemaining(initialLeft, format)}${unit}`;
+  const accessibleName = centerLabel
+    ? `${centerLabel}, ${label} ${initialTime}`
+    : `${label} ${initialTime}`;
 
   return (
     <div className="flex flex-col items-center">
       <div
-        className={`relative h-64 w-64 ${approaching ? 'animate-pulse-soft' : ''}`}
+        className={`relative ${center ? 'h-80 w-80' : 'h-64 w-64'} ${approaching ? 'animate-pulse-soft' : ''}`}
         role="timer"
-        aria-label={`${label} ${formatRemaining(initialLeft, format)}`}
+        aria-label={accessibleName}
       >
         <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
           <circle cx="100" cy="100" r={RADIUS} fill="none" stroke="var(--line)" strokeWidth="10" />
@@ -91,11 +105,29 @@ export function RingCountdown({
             strokeLinecap="round"
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
-          <p className="text-xs tracking-[0.25em] text-[var(--muted)]">{label}</p>
-          <p ref={numberRef} className="mt-1 text-6xl font-semibold tabular-nums">
-            {formatRemaining(initialLeft, format)}
-          </p>
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-10 text-center">
+          {center ? (
+            <>
+              <div>{center}</div>
+              <p className="mt-3 text-xs font-medium tracking-[0.22em]" style={{ color: stroke }}>
+                {label}
+              </p>
+              <p
+                ref={numberRef}
+                className="mt-1 text-4xl font-semibold tabular-nums leading-none"
+                style={{ color: stroke }}
+              >
+                {initialTime}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs tracking-[0.25em] text-[var(--muted)]">{label}</p>
+              <p ref={numberRef} className="mt-1 text-6xl font-semibold tabular-nums">
+                {initialTime}
+              </p>
+            </>
+          )}
           {caption ? <p className="mt-1 text-sm text-[var(--muted)]">{caption}</p> : null}
         </div>
       </div>
