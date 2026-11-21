@@ -102,6 +102,48 @@ class RefreshDecisionTest(unittest.TestCase):
         self.assertEqual(action, "wait")
         self.assertIn("locked", reason)
 
+    def test_renews_a_signature_that_expires_within_two_days(self):
+        action, reason = decide(last_success=NOW - timedelta(hours=1), profile_expiring=True)
+        self.assertEqual(action, "install")
+        self.assertIn("expiry", reason)
+
+    def test_an_expiring_signature_still_waits_while_the_phone_is_locked(self):
+        action, reason = decide(last_success=NOW - timedelta(days=6), profile_expiring=True, locked=True)
+        self.assertEqual(action, "wait")
+        self.assertIn("locked", reason)
+
+    def test_a_fresh_signature_is_not_treated_as_expiring(self):
+        self.assertFalse(resign.signature_is_expiring(NOW + timedelta(days=4), NOW))
+        self.assertTrue(resign.signature_is_expiring(NOW + timedelta(hours=47), NOW))
+        self.assertFalse(resign.signature_is_expiring(None, NOW))
+
+    def test_install_choice_keeps_a_valid_signature_and_renews_a_short_one(self):
+        fresh = NOW + timedelta(days=6)
+        short = NOW + timedelta(hours=30)
+        self.assertEqual(resign.choose_install("upgrade", fresh, None, NOW), "upgrade")
+        self.assertEqual(resign.choose_install("upgrade", short, None, NOW), "resign")
+        self.assertEqual(resign.choose_install("unsigned", None, fresh, NOW), "resign")
+        self.assertEqual(resign.choose_install("other", fresh, None, NOW), "refuse")
+        self.assertEqual(resign.choose_install("upgrade", short, fresh, NOW), "skip")
+        self.assertEqual(resign.choose_install("upgrade", NOW + timedelta(days=1), short, NOW), "resign")
+
+    def test_state_keeps_the_signature_expiry_across_later_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            expires = NOW + timedelta(days=6)
+            resign.write_state(path, NOW, 10, expires)
+            resign.write_state(path, NOW + timedelta(hours=1))
+            self.assertEqual(resign.load_signature_expiry(path), expires)
+            self.assertEqual(resign.load_ipa_mtime(path), 10)
+
+    def test_signer_is_patched_only_when_both_markers_are_present(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "AltServer"
+            binary.write_bytes(b"Keeping original bundle identifier")
+            self.assertFalse(resign.signer_is_patched(binary))
+            binary.write_bytes(b"Keeping original bundle identifier\0without removing the ones already on the phone")
+            self.assertTrue(resign.signer_is_patched(binary))
+
     def test_build_is_newer_ignores_a_missing_record(self):
         self.assertFalse(resign.build_is_newer(10, None))
         self.assertTrue(resign.build_is_newer(10, 8))

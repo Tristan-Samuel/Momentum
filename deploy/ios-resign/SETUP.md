@@ -36,6 +36,8 @@ The Mac signs the build as `com.momentum.workout`, the app already on the phone.
 
 That install does not rename the app and does not remove its provisioning profile. The workouts stay, and iOS does not ask you to trust the developer again. Keep the icon that already has your workouts. An icon that says the developer is not trusted is a second app.
 
+The free profile lasts 7 days. When it has less than two days left, the Pi signs a new one for the same `com.momentum.workout` and adds it beside the profile already on the phone. It does not rename the app and it does not remove the trusted profile. A content update of a signature that is still valid does not talk to Apple.
+
 ## 4. After you change the app
 
 On the Mac, with the phone unlocked on the Mac's Wi-Fi:

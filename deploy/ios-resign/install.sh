@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the Momentum resign units on a 64-bit Raspberry Pi. No Docker.
+# Install the Momentum resign units on a 64-bit Raspberry Pi.
 set -euo pipefail
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -99,7 +99,12 @@ fetch() {
   rm -f "$tmp"
 }
 
-fetch "$ALTSERVER_URL" "$ALTSERVER_SHA" "$LIB/AltServer"
+# A later build-signer.sh install keeps the original bundle id. Do not put the
+# stock binary back over it. The stock one renames the app and clears trust.
+if ! grep -a -F -q "Keeping original bundle identifier" "$LIB/AltServer" 2>/dev/null \
+  || ! grep -a -F -q "without removing the ones already on the phone" "$LIB/AltServer" 2>/dev/null; then
+  fetch "$ALTSERVER_URL" "$ALTSERVER_SHA" "$LIB/AltServer"
+fi
 
 netmuxd_tmp=$(mktemp -d)
 curl -fsSL "$NETMUXD_URL" -o "$netmuxd_tmp/netmuxd.tar.gz"

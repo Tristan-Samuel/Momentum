@@ -19,7 +19,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REFRESH_AFTER = timedelta(days=5)
+RENEW_WITHIN = timedelta(hours=48)
 INSTALL_TIMEOUT = 15 * 60
+EXPECTED_BUNDLE = "com.momentum.workout"
+SIGNER_BUNDLE_MARKER = "Keeping original bundle identifier"
+SIGNER_PROFILE_MARKER = "without removing the ones already on the phone"
 
 
 def parse_time(value: str) -> datetime:
@@ -49,6 +53,7 @@ def refresh_decision(
     refresh_after: timedelta = REFRESH_AFTER,
     build_changed: bool = False,
     forced: bool = False,
+    profile_expiring: bool = False,
 ) -> tuple[str, str]:
     """Return ('install' | 'wait' | 'skip', reason)."""
     if not ipa_present:
@@ -61,6 +66,8 @@ def refresh_decision(
         return "install", "an update was requested and the iPhone is unlocked"
     if build_changed:
         return "install", "a new build is waiting and the iPhone is unlocked"
+    if profile_expiring:
+        return "install", "the free signature is near expiry and the iPhone is unlocked"
     if not due(last_success, now, refresh_after):
         return "skip", "last install is still inside the refresh window"
     return "install", "refresh is due and the iPhone is unlocked"
@@ -82,14 +89,50 @@ def load_last_success(path: Path) -> datetime | None:
         return None
 
 
-def write_state(path: Path, when: datetime, ipa_mtime: float | None = None) -> None:
+def _read_state(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_state(
+    path: Path,
+    when: datetime,
+    ipa_mtime: float | None = None,
+    signature_expires: datetime | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing = _read_state(path)
     body: dict[str, object] = {"last_success": when.astimezone(timezone.utc).isoformat()}
+    if ipa_mtime is None and isinstance(existing.get("ipa_mtime"), (int, float)) and not isinstance(existing.get("ipa_mtime"), bool):
+        ipa_mtime = float(existing["ipa_mtime"])
     if ipa_mtime is not None:
         body["ipa_mtime"] = ipa_mtime
+    if signature_expires is None:
+        signature_expires = load_signature_expiry(path)
+    if signature_expires is not None:
+        body["signature_expires"] = signature_expires.astimezone(timezone.utc).isoformat()
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(body) + "\n")
     temporary.replace(path)
+
+
+def load_signature_expiry(path: Path) -> datetime | None:
+    raw = _read_state(path).get("signature_expires")
+    if not isinstance(raw, str):
+        return None
+    try:
+        return parse_time(raw)
+    except ValueError:
+        return None
+
+
+def signature_is_expiring(expires: datetime | None, now: datetime, within: timedelta = RENEW_WITHIN) -> bool:
+    if expires is None:
+        return False
+    return expires <= now + within
 
 
 def load_ipa_mtime(path: Path) -> float | None:
@@ -236,9 +279,6 @@ def settings_from_env(env: dict[str, str] | None = None) -> Settings:
     )
 
 
-EXPECTED_BUNDLE = "com.momentum.workout"
-
-
 def bundle_id_from_application_identifier(value: str | None) -> str | None:
     """`TEAMID.com.momentum.workout` -> `com.momentum.workout`."""
     if not value or "." not in value:
@@ -333,7 +373,7 @@ def probe_device(settings: Settings) -> tuple[bool, bool]:
     return False, False
 
 
-def application_identifier_from_profile(profile: bytes) -> str | None:
+def profile_facts(profile: bytes) -> tuple[str | None, datetime | None]:
     completed = subprocess.run(
         ["openssl", "smime", "-inform", "der", "-verify", "-noverify"],
         input=profile,
@@ -341,19 +381,32 @@ def application_identifier_from_profile(profile: bytes) -> str | None:
         check=False,
     )
     if completed.returncode != 0 or not completed.stdout:
-        return None
+        return None, None
     try:
         payload = plistlib.loads(completed.stdout)
     except Exception:
-        return None
-    entitlements = payload.get("Entitlements") if isinstance(payload, dict) else None
-    if not isinstance(entitlements, dict):
-        return None
-    value = entitlements.get("application-identifier")
-    return value if isinstance(value, str) else None
+        return None, None
+    if not isinstance(payload, dict):
+        return None, None
+    entitlements = payload.get("Entitlements")
+    identifier = entitlements.get("application-identifier") if isinstance(entitlements, dict) else None
+    if not isinstance(identifier, str):
+        identifier = None
+    expires = payload.get("ExpirationDate")
+    if isinstance(expires, datetime):
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        expires = expires.astimezone(timezone.utc)
+    else:
+        expires = None
+    return identifier, expires
 
 
-def embedded_application_identifier(ipa: Path) -> str | None:
+def application_identifier_from_profile(profile: bytes) -> str | None:
+    return profile_facts(profile)[0]
+
+
+def embedded_profile(ipa: Path) -> tuple[str | None, datetime | None]:
     import zipfile
 
     try:
@@ -361,8 +414,50 @@ def embedded_application_identifier(ipa: Path) -> str | None:
             name = next(item for item in archive.namelist() if item.endswith("embedded.mobileprovision"))
             profile = archive.read(name)
     except (OSError, zipfile.BadZipFile, StopIteration):
-        return None
-    return application_identifier_from_profile(profile)
+        return None, None
+    return profile_facts(profile)
+
+
+def embedded_application_identifier(ipa: Path) -> str | None:
+    return embedded_profile(ipa)[0]
+
+
+def effective_expiry(file_expires: datetime | None, recorded: datetime | None) -> datetime | None:
+    candidates = [item for item in (file_expires, recorded) if item is not None]
+    return max(candidates) if candidates else None
+
+
+def choose_install(
+    plan: str,
+    file_expires: datetime | None,
+    recorded: datetime | None,
+    now: datetime,
+) -> str:
+    """resign, upgrade, skip, or refuse.
+
+    An IPA signed for another bundle id is refused. An unsigned build, or a
+    profile inside the renewal window, is re-signed on the Pi. A stored IPA
+    whose profile is older than the one already on the phone is left alone.
+    """
+    if plan == "other":
+        return "refuse"
+    if plan == "unsigned":
+        return "resign"
+    if recorded and file_expires and file_expires + timedelta(hours=1) < recorded:
+        if signature_is_expiring(recorded, now):
+            return "resign"
+        return "skip"
+    if signature_is_expiring(file_expires, now):
+        return "resign"
+    return "upgrade"
+
+
+def signer_is_patched(path: Path) -> bool:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return SIGNER_BUNDLE_MARKER.encode() in data and SIGNER_PROFILE_MARKER.encode() in data
 
 
 def install_signed_ipa(settings: Settings) -> bool:
@@ -393,20 +488,119 @@ def install_signed_ipa(settings: Settings) -> bool:
     return completed.returncode == 0
 
 
-def install_ipa(settings: Settings) -> str | None:
-    """Upgrade the installed app. Return an error reason, or None on success."""
-    identifier = embedded_application_identifier(settings.ipa)
-    plan = install_plan(identifier)
-    if plan == "other":
-        bundle = bundle_id_from_application_identifier(identifier)
-        return f"Refused a signature for {bundle}. That would install a second app."
-    if plan == "unsigned":
-        return "Refused an unsigned build. Signing it here would rename the app and ask for trust again."
-    if not shutil.which(settings.ideviceinstaller) and not Path(settings.ideviceinstaller).is_file():
-        return f"ideviceinstaller is missing at {settings.ideviceinstaller}"
-    if install_signed_ipa(settings):
+def _read_two_fa(path: Path) -> str | None:
+    try:
+        code = path.read_text().strip()
+    except OSError:
         return None
-    return "The upgrade failed."
+    if not code:
+        return None
+    path.unlink(missing_ok=True)
+    return code
+
+
+def device_profile_expiry(settings: Settings) -> datetime | None:
+    provision = shutil.which("ideviceprovision")
+    if not provision:
+        sibling = Path(settings.ideviceinstaller).with_name("ideviceprovision")
+        provision = str(sibling) if sibling.is_file() else None
+    if not provision:
+        return None
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        completed = subprocess.run(
+            [provision, "-n", "-u", settings.udid, "copy", directory],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode != 0:
+            return None
+        found: list[datetime] = []
+        for path in Path(directory).iterdir():
+            try:
+                identifier, expires = profile_facts(path.read_bytes())
+            except OSError:
+                continue
+            if bundle_id_from_application_identifier(identifier) == EXPECTED_BUNDLE and expires is not None:
+                found.append(expires)
+    return max(found) if found else None
+
+
+def resign_with_altserver(settings: Settings) -> tuple[str | None, datetime | None]:
+    """Renew the 7-day profile for the existing app. Return (error, expiry)."""
+    if not signer_is_patched(settings.altserver):
+        return "The signer on the Pi still renames the app, so it was not run.", None
+    code = _read_two_fa(settings.two_fa)
+    env = os.environ.copy()
+    env["ALTSERVER_ANISETTE_SERVER"] = settings.anisette_url
+    env.setdefault("ALTSERVER_ANISETTE_PROTOCOL", "v3")
+    config_home = env.get("XDG_CONFIG_HOME") or "/var/lib/momentum-resign"
+    env["XDG_CONFIG_HOME"] = config_home
+    Path(config_home).mkdir(parents=True, exist_ok=True)
+    command = [
+        str(settings.altserver),
+        "-u",
+        settings.udid,
+        "-a",
+        settings.apple_id,
+        "-p",
+        settings.password,
+        str(settings.ipa),
+    ]
+    run_kwargs: dict = {"input": f"{code}\n"} if code else {"stdin": subprocess.DEVNULL}
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=INSTALL_TIMEOUT,
+            env=env,
+            **run_kwargs,
+        )
+    except subprocess.TimeoutExpired:
+        return "The signature renewal timed out.", None
+    output = redact((completed.stdout or "") + (completed.stderr or ""), settings.password)
+    tail = "\n".join(output.strip().splitlines()[-40:])
+    if tail:
+        print(tail)
+    lowered = output.lower()
+    if any(phrase in lowered for phrase in ("verification code", "two-factor", "two factor", "security code")):
+        return f"Apple asked for a code. Write it to {settings.two_fa} and the next check will send it.", None
+    succeeded = completed.returncode == 0 and "Installation Succeeded" in output and "Could not install" not in output
+    if not succeeded:
+        return "The signature renewal failed.", None
+    if f"{SIGNER_BUNDLE_MARKER} {EXPECTED_BUNDLE}" not in output:
+        return "The signer did not confirm it kept com.momentum.workout.", None
+    expires = device_profile_expiry(settings)
+    if expires is None:
+        expires = datetime.now(timezone.utc) + timedelta(days=6)
+    return None, expires
+
+
+def install_ipa(settings: Settings, now: datetime | None = None) -> tuple[str | None, datetime | None]:
+    """Install or renew. Return (error, signature expiry). Expiry None keeps the recorded one."""
+    now = now or datetime.now(timezone.utc)
+    identifier, file_expires = embedded_profile(settings.ipa)
+    plan = install_plan(identifier)
+    recorded = load_signature_expiry(settings.state)
+    choice = choose_install(plan, file_expires, recorded, now)
+    if choice == "refuse":
+        bundle = bundle_id_from_application_identifier(identifier)
+        return f"Refused a signature for {bundle}. That would install a second app.", None
+    if choice == "skip":
+        print("momentum-resign: the phone already has a newer signature than this build")
+        return None, None
+    if choice == "resign":
+        return resign_with_altserver(settings)
+    if not shutil.which(settings.ideviceinstaller) and not Path(settings.ideviceinstaller).is_file():
+        return f"ideviceinstaller is missing at {settings.ideviceinstaller}", None
+    if install_signed_ipa(settings):
+        return None, file_expires
+    return "The upgrade failed.", None
 
 
 def usbmux_plist_packet(payload: dict, tag: int = 1) -> bytes:
@@ -496,6 +690,8 @@ def main(argv: list[str] | None = None) -> int:
         write_status(settings.status, "wait", str(error), now)
         return 0
     current_mtime = settings.ipa.stat().st_mtime if settings.ipa.is_file() else None
+    file_expires = embedded_profile(settings.ipa)[1] if settings.ipa.is_file() else None
+    expires = effective_expiry(file_expires, load_signature_expiry(settings.state))
     action, reason = refresh_decision(
         last_success=load_last_success(settings.state),
         now=now,
@@ -505,6 +701,7 @@ def main(argv: list[str] | None = None) -> int:
         refresh_after=settings.refresh_after,
         build_changed=build_is_newer(current_mtime, load_ipa_mtime(settings.state)),
         forced=forced,
+        profile_expiring=signature_is_expiring(expires, now),
     )
     print(f"momentum-resign: {action}: {reason}")
     if action != "install":
@@ -513,12 +710,12 @@ def main(argv: list[str] | None = None) -> int:
     if forced:
         settings.force.unlink(missing_ok=True)
     write_status(settings.status, "installing", reason, now)
-    failure = install_ipa(settings)
+    failure, signature_expires = install_ipa(settings, now)
     if failure:
         print(f"momentum-resign: {failure}", file=sys.stderr)
         write_status(settings.status, "failed", failure, now)
         return 1
-    write_state(settings.state, now, current_mtime)
+    write_state(settings.state, now, current_mtime, signature_expires)
     write_status(settings.status, "installed", "installed", now)
     print("momentum-resign: installed")
     return 0
