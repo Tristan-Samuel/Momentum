@@ -13,6 +13,7 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -246,6 +247,24 @@ def _listed_udids(binary: str, flag: str) -> set[str]:
     return _udids(listed.stdout or "")
 
 
+def relocate_device(listed, restart, sleep=time.sleep, attempts: int = 12):
+    """Find the phone, restarting the Wi-Fi bridge once when its list is empty.
+
+    netmuxd keeps serving an empty device list after it misses one mDNS browse.
+    The phone can still be on the home network. A new bridge process picks it up.
+    """
+    on_usb, on_network = listed()
+    if on_usb or on_network:
+        return on_usb, on_network
+    restart()
+    for _ in range(attempts):
+        sleep(1)
+        on_usb, on_network = listed()
+        if on_usb or on_network:
+            return on_usb, on_network
+    return False, False
+
+
 def probe_device(settings: Settings) -> tuple[bool, bool]:
     """Return (present, locked). A device that does not answer is absent.
 
@@ -253,8 +272,17 @@ def probe_device(settings: Settings) -> tuple[bool, bool]:
     is `idevice_id -n`.
     """
     udid = settings.udid.lower()
-    on_usb = udid in _listed_udids(settings.idevice_id, "-l")
-    on_network = udid in _listed_udids(settings.idevice_id, "-n")
+
+    def listed() -> tuple[bool, bool]:
+        return (
+            udid in _listed_udids(settings.idevice_id, "-l"),
+            udid in _listed_udids(settings.idevice_id, "-n"),
+        )
+
+    on_usb, on_network = relocate_device(
+        listed,
+        lambda: subprocess.run(["systemctl", "restart", "netmuxd"], check=False),
+    )
     if not on_usb and not on_network:
         return False, False
     # DeviceName answers when the phone is unlocked. PasswordProtected as a

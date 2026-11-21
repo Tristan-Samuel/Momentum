@@ -30,6 +30,8 @@ install_units() {
   install -m 0644 "$HERE/momentum-resign.service" /etc/systemd/system/momentum-resign.service
   install -m 0644 "$HERE/momentum-resign.timer" /etc/systemd/system/momentum-resign.timer
   install -m 0644 "$HERE/momentum-update.service" /etc/systemd/system/momentum-update.service
+  rm -f /etc/systemd/system/netmuxd.service.d/log.conf
+  rmdir /etc/systemd/system/netmuxd.service.d 2>/dev/null || true
   systemctl daemon-reload
   systemctl enable --now momentum-update.service
   systemctl restart momentum-update.service

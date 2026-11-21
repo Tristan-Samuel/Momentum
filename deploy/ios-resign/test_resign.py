@@ -58,6 +58,26 @@ class RefreshDecisionTest(unittest.TestCase):
         self.assertEqual(action, "install")
         self.assertIn("new build", reason)
 
+    def test_a_missing_phone_restarts_the_bridge_once_and_then_appears(self):
+        calls = {"listed": 0, "restart": 0}
+
+        def listed():
+            calls["listed"] += 1
+            return (False, calls["listed"] >= 3)
+
+        def restart():
+            calls["restart"] += 1
+
+        on_usb, on_network = resign.relocate_device(listed, restart, sleep=lambda _seconds: None, attempts=5)
+        self.assertEqual((on_usb, on_network), (False, True))
+        self.assertEqual(calls["restart"], 1)
+
+    def test_a_visible_phone_does_not_restart_the_bridge(self):
+        def restart():
+            raise AssertionError("bridge restarted")
+
+        self.assertEqual(resign.relocate_device(lambda: (False, True), restart, attempts=1), (False, True))
+
     def test_installs_when_an_update_was_requested(self):
         action, reason = decide(last_success=NOW - timedelta(hours=1), forced=True)
         self.assertEqual(action, "install")

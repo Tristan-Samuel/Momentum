@@ -39,7 +39,7 @@ Answer the dialogs:
 
 Unlock the iPhone on the Pi's home Wi-Fi and leave it unlocked. The Pi is on `192.168.7.x`. The phone has to be on that network. Tailscale does not count, and the Mac's Wi-Fi does not count when it is a different network.
 
-The Pi checks every 30 minutes. It installs a new build, or a signature that is due, when it can see the phone. You can also tap **Update now** in the app. You do not run another command.
+The Pi checks every 30 minutes. It installs a new build, or a signature that is due, when it can see the phone. You can also tap **Update now** in the app. You do not run another command. If the Wi-Fi bridge has lost the phone, that check restarts the bridge and looks again. The phone still has to be unlocked on the home Wi-Fi.
 
 Apple no longer accepts the Pi's own anisette server. Sign-in uses `https://new.ani.sidestore.io` for the Mac identity only. The Apple ID password still goes only to Apple, and the identity is stored on the Pi after the first sign-in.
 
