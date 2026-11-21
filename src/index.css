@@ -71,6 +71,25 @@ body {
   transition: none !important;
 }
 
+/* iOS draws the native time control wider than its box. The visible time is the label; this input only opens the picker. */
+.reminder-time-input {
+  opacity: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.reminder-time-input::-webkit-datetime-edit,
+.reminder-time-input::-webkit-datetime-edit-fields-wrapper,
+.reminder-time-input::-webkit-datetime-edit-text,
+.reminder-time-input::-webkit-datetime-edit-hour-field,
+.reminder-time-input::-webkit-datetime-edit-minute-field,
+.reminder-time-input::-webkit-datetime-edit-ampm-field,
+.reminder-time-input::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 @keyframes momentum-fade-up {
   from {
     opacity: 0;

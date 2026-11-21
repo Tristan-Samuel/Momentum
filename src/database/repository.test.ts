@@ -27,6 +27,12 @@ afterEach(async () => {
   await Promise.all(db.tables.map((table) => table.clear()));
 });
 
+it('seeds a single program when several screens open at once', async () => {
+  await Promise.all([ensureSeeded(), ensureSeeded(), getSettings(), getPreparedWorkout()]);
+  expect(await db.workoutPrograms.count()).toBe(1);
+  expect(await db.routines.count()).toBe(1);
+});
+
 async function seedCompletedChinUp(completedReps: number[]): Promise<{
   sessionId: string;
   exerciseId: string;
