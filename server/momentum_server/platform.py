@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import requests
 from flask import current_app
 
@@ -23,13 +25,15 @@ _STATUS = {
     "not_configured": 503,
     "cap": 429,
     "rate_limited": 429,
+    "gemini_unavailable": 503,
 }
 
 
 class PlatformError(Exception):
-    def __init__(self, message: str, status: int = 502) -> None:
+    def __init__(self, message: str, status: int = 503, code: str = "") -> None:
         super().__init__(message)
         self.status = status
+        self.code = code
 
 
 def platform_configured() -> bool:
@@ -47,6 +51,21 @@ def model_name() -> str:
 
 
 def complete(prompt: str, *, user_email: str) -> str:
+    """Retries a fast Gemini 503. A slow failure is returned as-is so gunicorn is not killed."""
+    delay = 0.5
+    for attempt in range(3):
+        started = time.monotonic()
+        try:
+            return _complete_once(prompt, user_email=user_email)
+        except PlatformError as exc:
+            if exc.code != "gemini_unavailable" or attempt == 2 or time.monotonic() - started > 8:
+                raise
+            time.sleep(delay)
+            delay *= 2
+    raise PlatformError("Gemini could not answer. Try again in a moment.", 503, "gemini_unavailable")
+
+
+def _complete_once(prompt: str, *, user_email: str) -> str:
     config = current_app.config
     try:
         response = requests.post(
@@ -70,8 +89,12 @@ def complete(prompt: str, *, user_email: str) -> str:
         raise PlatformError("The login service returned an unreadable response.") from exc
     if response.status_code >= 400:
         code = str(data.get("error") or "") if isinstance(data, dict) else ""
-        raise PlatformError(_MESSAGES.get(code, "The login service refused the request."), _STATUS.get(code, 502))
+        raise PlatformError(
+            _MESSAGES.get(code, "The login service refused the request."),
+            _STATUS.get(code, 503),
+            code,
+        )
     text = data.get("text") if isinstance(data, dict) else None
     if not isinstance(text, str) or not text.strip():
-        raise PlatformError("Gemini returned an empty answer.")
+        raise PlatformError("Gemini returned an empty answer.", 503, "gemini_unavailable")
     return text

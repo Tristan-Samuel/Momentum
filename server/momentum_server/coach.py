@@ -30,11 +30,11 @@ def complete_with_gemini(prompt: str, *, api_key: str, model: str) -> str:
         timeout=25,
     )
     if response.status_code >= 400:
-        raise CoachError("Gemini could not answer. Try again in a moment.", 502)
+        raise CoachError("Gemini could not answer. Try again in a moment.", 503)
     try:
         return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise CoachError("Gemini returned an empty answer.", 502) from exc
+        raise CoachError("Gemini returned an empty answer.", 503) from exc
 
 
 def interpret(task: str, note: str, context: Any, complete: Complete) -> dict[str, Any]:
@@ -50,9 +50,9 @@ def interpret(task: str, note: str, context: Any, complete: Complete) -> dict[st
     try:
         payload = json.loads(_strip_fence(text))
     except json.JSONDecodeError as exc:
-        raise CoachError("Gemini returned something that was not a workout.", 502) from exc
+        raise CoachError("Gemini returned something that was not a workout.", 503) from exc
     if not isinstance(payload, dict):
-        raise CoachError("Gemini returned something that was not a workout.", 502)
+        raise CoachError("Gemini returned something that was not a workout.", 503)
     reply = _shape(task, payload, _ids(context))
     return reply
 
@@ -285,12 +285,12 @@ def _shape(task: str, payload: dict[str, Any], known: set[str]) -> dict[str, Any
         edit = None
         recommendations = []
         if program is None:
-            raise CoachError("Gemini did not return a program.", 502)
+            raise CoachError("Gemini did not return a program.", 503)
     elif task == "edit_exercise":
         program = None
         recommendations = []
         if edit is None:
-            raise CoachError("Gemini did not return a change for that exercise.", 502)
+            raise CoachError("Gemini did not return a change for that exercise.", 503)
     else:
         program = None
         edit = None

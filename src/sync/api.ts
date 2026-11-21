@@ -74,7 +74,11 @@ async function request<T>(
   }
   const payload = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) {
-    throw new SyncHttpError(response.status, payload.error || `Sync failed (${response.status}).`);
+    const fallback =
+      path === '/api/coach'
+        ? 'Gemini could not answer. Try again in a moment.'
+        : `Sync failed (${response.status}).`;
+    throw new SyncHttpError(response.status, payload.error || fallback);
   }
   return payload as T;
 }

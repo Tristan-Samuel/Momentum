@@ -153,6 +153,62 @@ def test_coach_reports_a_platform_refusal(client, auth, app, monkeypatch):
     assert "daily" in response.get_json()["error"]
 
 
+def test_coach_retries_when_gemini_is_busy(client, auth, app, monkeypatch):
+    app.config["GEMINI_API_KEY"] = ""
+    app.config["LOGIN_CLIENT_ID"] = "momentum"
+    app.config["LOGIN_CLIENT_SECRET"] = "secret"
+    app.config["LOGIN_TOKEN_URL"] = "http://127.0.0.1:5111"
+    monkeypatch.setattr("momentum_server.platform.time.sleep", lambda _seconds: None)
+    calls = {"n": 0}
+
+    class Response:
+        def __init__(self, status, body):
+            self.status_code = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    def post(*_args, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return Response(502, {"error": "gemini_unavailable"})
+        return Response(200, {"text": json.dumps({"summary": "Add a morning set.", "recommendations": []})})
+
+    monkeypatch.setattr("momentum_server.platform.requests.post", post)
+    response = client.post(
+        "/api/coach",
+        headers=auth,
+        json={"task": "analyze", "note": "morning too", "context": {"program": {"id": "p1"}}},
+    )
+    assert response.status_code == 200, response.data
+    assert response.get_json()["summary"] == "Add a morning set."
+    assert calls["n"] == 2
+
+
+def test_coach_reports_gemini_when_it_stays_busy(client, auth, app, monkeypatch):
+    app.config["GEMINI_API_KEY"] = ""
+    app.config["LOGIN_CLIENT_ID"] = "momentum"
+    app.config["LOGIN_CLIENT_SECRET"] = "secret"
+    app.config["LOGIN_TOKEN_URL"] = "http://127.0.0.1:5111"
+    monkeypatch.setattr("momentum_server.platform.time.sleep", lambda _seconds: None)
+
+    class Response:
+        status_code = 502
+
+        def json(self):
+            return {"error": "gemini_unavailable"}
+
+    monkeypatch.setattr("momentum_server.platform.requests.post", lambda *_args, **_kwargs: Response())
+    response = client.post(
+        "/api/coach",
+        headers=auth,
+        json={"task": "analyze", "note": "", "context": {"program": {"id": "p1"}}},
+    )
+    assert response.status_code == 503
+    assert "Gemini could not answer" in response.get_json()["error"]
+
+
 def test_unknown_edit_id_is_rejected():
     try:
         interpret(
