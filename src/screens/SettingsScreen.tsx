@@ -282,7 +282,7 @@ export function SettingsScreen() {
                   mime: 'text/plain',
                   dialogTitle: 'Save training log',
                 });
-                setDataStatus('Training log ready. Paste it into ChatGPT, then ask your question.');
+                setDataStatus('Training log ready. Paste it into an AI, then ask your question.');
               } catch (err) {
                 if (err instanceof Error && /cancel/i.test(err.message)) return;
                 setDataStatus('Could not export the training log.');

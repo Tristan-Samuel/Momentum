@@ -28,7 +28,7 @@ const TASKS: Array<{ value: CoachTask; label: string }> = [
 const PLACEHOLDER: Record<CoachTask, string> = {
   create_program: 'A 40-minute pull day. Pull-ups start with the lift. Pistol squats. About four exercises.',
   edit_exercise: 'Make the rest 2 minutes and start this one with the lift.',
-  analyze: 'Optional. Ask about a plateau, a joint, or what to change next.',
+  analyze: 'Optional. Ask about the week, a plateau, the schedule, or what to change.',
 };
 
 export function CoachScreen() {
@@ -65,7 +65,10 @@ export function CoachScreen() {
     setError(null);
     setApplied(null);
     try {
-      const context = await buildCoachContext(prepared.program.id, task === 'edit_exercise' ? focus?.id : null);
+      const context = await buildCoachContext(
+        task === 'edit_exercise' ? prepared.program.id : null,
+        task === 'edit_exercise' ? focus?.id : null,
+      );
       const raw = await askCoach(account.token, { task, note: trimmed, context });
       setReply(parseCoachReply(raw));
     } catch (err) {
@@ -81,7 +84,8 @@ export function CoachScreen() {
       <p className="text-xs tracking-[0.25em] text-[var(--muted)]">GEMINI</p>
       <h1 className="mt-3 text-4xl font-semibold tracking-tight">Coach</h1>
       <p className="mt-3 text-[var(--muted)]">
-        Draft a program, change one exercise, or read recent sessions. Sent through tssamuel.com.
+        Ask about the whole log: every program, the schedule, and past sessions. Draft a program or change one
+        exercise. Sent to Gemini through tssamuel.com.
       </p>
 
       {!signedIn ? (
@@ -93,7 +97,7 @@ export function CoachScreen() {
         </Card>
       ) : (
         <>
-          {programs.length > 1 ? (
+          {task === 'edit_exercise' && programs.length > 1 ? (
             <div className="-mx-5 mt-6 flex gap-2 overflow-x-auto px-5 pb-1" role="tablist" aria-label="Program">
               {programs.map((program) => (
                 <button
@@ -131,6 +135,11 @@ export function CoachScreen() {
               }}
             />
           </div>
+          <p className="mt-4 text-sm text-[var(--muted)]">
+            {task === 'edit_exercise'
+              ? 'The change applies to the exercise you pick. Gemini still reads the other programs, the schedule, and the log.'
+              : 'Gemini reads every program, the schedule, and the training log.'}
+          </p>
 
           {task === 'edit_exercise' && focus ? (
             <div className="mt-4 flex flex-wrap gap-2">

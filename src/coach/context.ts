@@ -1,27 +1,15 @@
+import { exportAll } from '@/database/backup';
 import * as repo from '@/database/repository';
+import { buildAiPrompt } from '@/export/prompt';
 
-export async function buildCoachContext(programId?: string | null, focusId?: string | null) {
-  const prepared = await repo.getPreparedWorkout(programId ?? undefined);
-  const sessions = (await repo.listSessions()).slice(0, 5);
-  const recent = [];
-  for (const session of sessions) {
-    const detail = await repo.getSessionDetail(session.id);
-    if (!detail) continue;
-    recent.push({
-      startedAt: session.startedAt,
-      program: session.programNameSnapshot,
-      status: session.status,
-      exercises: detail.exercises.map(({ exercise, sets }) => ({
-        name: exercise.nameSnapshot,
-        reps: sets.map((set) => (set.skipped ? 0 : set.completedReps)),
-        rating: exercise.difficultyRating,
-        rir: exercise.rir,
-        form: exercise.formQuality,
-      })),
-    });
-  }
+/** Every program, the schedule, and the same brief the AI export writes. */
+export async function buildCoachContext(focusProgramId?: string | null, focusExerciseConfigId?: string | null) {
+  const [envelope, preparedPrograms] = await Promise.all([exportAll(), repo.listPreparedPrograms()]);
   return {
-    program: {
+    brief: buildAiPrompt(envelope),
+    focusProgramId: focusProgramId ?? null,
+    focusExerciseConfigId: focusExerciseConfigId ?? null,
+    programs: preparedPrograms.map((prepared) => ({
       id: prepared.program.id,
       name: prepared.program.name,
       exercises: prepared.exercises.map((item) => ({
@@ -51,8 +39,6 @@ export async function buildCoachContext(programId?: string | null, focusId?: str
         lastRating: item.progression.lastDifficultyRating,
         lastRir: item.progression.lastRir,
       })),
-    },
-    focusExerciseConfigId: focusId ?? null,
-    recent,
+    })),
   };
 }

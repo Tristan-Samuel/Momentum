@@ -45,8 +45,15 @@ def interpret(task: str, note: str, context: Any, complete: Complete) -> dict[st
     if not isinstance(context, dict):
         raise CoachError("Context must be an object.")
     note = note.strip()[:2000]
+    brief = ""
+    if isinstance(context.get("brief"), str):
+        raw_brief = context["brief"].strip()
+        brief = raw_brief[:120_000]
+        if len(raw_brief) > 120_000:
+            brief += "\n[The log was cut here. The guide, schedule, programs, and newer sessions above are complete.]"
+        context = {key: value for key, value in context.items() if key != "brief"}
     raw_context = json.dumps(context, default=str)[:60_000]
-    text = complete(_prompt(task, note, raw_context))
+    text = complete(_prompt(task, note, raw_context, brief))
     try:
         payload = json.loads(_strip_fence(text))
     except json.JSONDecodeError as exc:
@@ -57,9 +64,15 @@ def interpret(task: str, note: str, context: Any, complete: Complete) -> dict[st
     return reply
 
 
-def _prompt(task: str, note: str, context: str) -> str:
+def _prompt(task: str, note: str, context: str, brief: str = "") -> str:
+    log = brief or "(no training log was attached)"
     return f"""You are the coach inside Momentum, a one-person strength app.
 Reply with one JSON object and no markdown.
+
+The training log is the whole record. It includes every program, the schedule and routines, how the app works, and the settings for adding an exercise. Answer from all of it. focusProgramId and focusExerciseConfigId only say which exercise an edit applies to. Do not limit a question or an analysis to that one program.
+
+Training log:
+{log}
 
 Rules of the app:
 - Rest is only between sets of the same exercise.
@@ -68,13 +81,14 @@ Rules of the app:
 - startPosition "top" means the rep starts by lowering (push-ups, squats, dips).
 - Tempo is seconds: eccentric, bottomPause, concentric, topPause.
 - measure "seconds" is an isometric hold. measure "reps" is a tempo set.
-- cueMode "open" means the person logs the reps (barbell and machine compounds such as squat, bench, deadlift, row, overhead press). cueMode "tempo" keeps the metronome. Curls, raises, and bodyweight stay tempo.
+- cueMode "open" means the person logs the reps (barbell and machine compounds such as squat, bench, deadlift, row, overhead press). cueMode "tempo" keeps the metronome. Curls, raises, and bodyweight stay tempo. Holds stay tempo.
 - load is the weight as a number. loadUnit is "lb" or "kg". loadKind is "bodyweight", "added" (a belt or vest), or "external" (a bar, dumbbell, or machine). loadPer is "total" or "side". loadStep is how much to add after the top of the rep range.
-- Use exerciseConfigId values from the context when you edit or recommend. Never invent an id.
+- Stay inside the ranges in "Adding an exercise" when you invent or change a setting.
+- Use exerciseConfigId values from the structured context when you edit or recommend. An id may belong to any program. Never invent an id.
 
 Task: {task}
 Note from the person: {note or "(none)"}
-Context: {context}
+Structured context: {context}
 
 JSON shape:
 {{
@@ -83,9 +97,10 @@ JSON shape:
   "edit": null or {{"exerciseConfigId": "string", "name": "string", "sets": 2, "minReps": 6, "maxReps": 12, "measure": "reps", "tempo": {{"eccentric": 3, "bottomPause": 0, "concentric": 1, "topPause": 0}}, "startPosition": "bottom", "restAfterSetSeconds": 120, "transitionAfterExerciseSeconds": 30, "targets": [8]}},
   "recommendations": [{{"exerciseConfigId": "string", "note": "string", "targets": [8], "resistanceLabel": "string"}}]
 }}
-For create_program, fill program and leave edit null.
+An exercise may set name, sets, minReps, maxReps, measure, tempo, startPosition, restAfterSetSeconds, transitionAfterExerciseSeconds, targetRirMin, targetRirMax, laterality, unilateralOrder, resistanceLabel, progressionStep, cueMode, loadKind, load, loadUnit, loadStep, and loadPer.
+For create_program, fill program and leave edit null. Fit it alongside the programs and routines already in the log.
 For edit_exercise, fill edit for the focused exercise and leave program null. Change only what was asked.
-For analyze, fill recommendations and leave program and edit null.
+For analyze, fill recommendations and leave program and edit null. A recommendation may name an exercise in any program. Use the schedule when you say what to change.
 """
 
 

@@ -169,5 +169,112 @@ describe('AI prompt export', () => {
     );
     expect(text).toContain('aborted');
     expect(text).toContain('Set 1: left 4, right 5 (target 5, target reduced from 6)');
+    expect(text).toContain('No routines.');
+  });
+
+  it('includes the schedule, how the app works, and the exercise settings', () => {
+    const text = buildAiPrompt(
+      envelope({
+        appSettings: [{ id: 'app', weeklyGoal: 4, theme: 'dark', weightUnit: 'kg' }],
+        workoutPrograms: [
+          { id: 'p', name: 'Pull', order: 0 },
+          { id: 'l', name: 'Legs', order: 1 },
+        ],
+        exercises: [{ id: 'e', name: 'Squat' }],
+        exerciseConfigurations: [
+          {
+            id: 'c',
+            programId: 'l',
+            exerciseId: 'e',
+            order: 0,
+            sets: 3,
+            minReps: 5,
+            maxReps: 8,
+            measure: 'reps',
+            tempo: { eccentric: 3, bottomPause: 1, concentric: 1, topPause: 0 },
+            startPosition: 'top',
+            restAfterSetSeconds: 180,
+            transitionAfterExerciseSeconds: 30,
+            targetRirMin: 1,
+            targetRirMax: 2,
+            laterality: 'bilateral',
+            cueMode: 'open',
+            loadKind: 'external',
+            load: 100,
+            loadUnit: 'kg',
+            loadStep: 2.5,
+            loadPer: 'total',
+            progressionStep: 1,
+            resistanceLabel: '100 kg',
+          },
+        ],
+        routines: [
+          {
+            id: 'morning',
+            name: 'Morning',
+            order: 0,
+            enabled: true,
+            mode: 'weekdays',
+            programIds: [],
+            weekdays: [null, 'p', 'p', null, 'p', null, null],
+            shift: [],
+            anchorDate: '2026-01-01',
+            skipMissed: false,
+            weeklyCount: 3,
+            reminderEnabled: true,
+            reminderHour: 6,
+            reminderMinute: 15,
+          },
+          {
+            id: 'night',
+            name: 'Night',
+            order: 1,
+            enabled: false,
+            mode: 'shift',
+            programIds: ['p'],
+            weekdays: [null, null, null, null, null, null, null],
+            shift: ['p', null],
+            anchorDate: '2026-11-16',
+            skipMissed: true,
+            weeklyCount: 3,
+            reminderEnabled: false,
+            reminderHour: 18,
+            reminderMinute: 0,
+          },
+        ],
+      }),
+    );
+
+    expect(text).toContain('A question is not limited to one program.');
+    expect(text).toContain('# How the app works');
+    expect(text).toContain('Rest is only the timer between sets');
+    expect(text).toContain('Per week: no fixed days.');
+    expect(text).toContain('# Adding an exercise');
+    expect(text).toContain('sets: 1 to 10');
+    expect(text).toContain('cueMode, reps only');
+    expect(text).toContain('loadKind: "bodyweight", "added", or "external"');
+    expect(text).toContain('This person’s new exercises use kg');
+    expect(text).toContain('default step is 2.5 kg');
+    expect(text).not.toContain('dark');
+    expect(text).toContain('## Morning — on — Days');
+    expect(text).toContain(
+      'Days: Sunday rest, Monday Pull, Tuesday Pull, Wednesday rest, Thursday Pull, Friday rest, Saturday rest.',
+    );
+    expect(text).toContain('Reminder 6:15 am.');
+    expect(text).toContain('## Night — off — Shift');
+    expect(text).toContain('Pattern: Pull, rest. Starts 2026-11-16. A missed training day stays next until it is done.');
+    expect(text).toContain('Reminder off (6:00 pm is saved).');
+    expect(text).toContain('Home skips this routine.');
+    expect(text).toContain('Squat (100 kg)');
+    expect(text).toContain('open set');
+    expect(text).toContain('external load 100 kg');
+    expect(text).toContain('load step 2.5 kg');
+    expect(text).toContain('progression step 1');
+
+    const night = text.slice(text.indexOf('## Night'), text.indexOf('# Programs'));
+    expect(night).not.toContain('Today:');
+    const day = new Date('2026-11-20T12:00:00.000Z').getDay();
+    const training = [null, 'p', 'p', null, 'p', null, null][day];
+    expect(text).toContain(training ? 'Today: Pull. Set for' : 'Today: rest. Rest day.');
   });
 });
