@@ -13,6 +13,7 @@
     <a class="brand" href="{{ url_for('home') }}">MOMENTUM</a>
     {% if current_user %}
     <nav>
+      {% if web_app %}<a href="{{ url_for('home') }}">App</a>{% endif %}
       {% if is_admin %}<a href="{{ url_for('admin_users') }}">Users</a>{% endif %}
       <a href="{{ url_for('me') }}">My training</a>
       <form method="post" action="{{ url_for('logout') }}"><button class="link">Sign out</button></form>

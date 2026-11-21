@@ -456,7 +456,7 @@ npm run build
 # copy dist/ to the path below, then restart the momentum unit
 ```
 
-`MOMENTUM_WEB_DIST` is that folder (see `deploy/momentum.env.example`). Unset, `/` stays the short sign-in page and the read-only log. Set, `/`, Program, Coach, Schedule, and the other app routes serve `index.html`. `/api`, `/login`, `/admin`, and `/me` stay on Flask. A signed-in browser gets a device token from `POST /api/web/token`. The iPhone app still uses its sign-in sheet.
+`MOMENTUM_WEB_DIST` is that folder (see `deploy/momentum.env.example`). Unset, `/` stays the short sign-in page and the read-only log. Set, `/`, Program, Coach, Schedule, and the other app routes serve `index.html`, and the log links back to that app. `/api`, `/login`, `/admin`, and `/me` stay on Flask. A signed-in browser gets a device token from `POST /api/web/token`. The iPhone app still uses its sign-in sheet.
 
 The coach sends the program and recent sessions to `POST /platform/gemini` on `LOGIN_TOKEN_URL` (login.tssamuel.com on the Pi, loopback only). The Gemini key stays in login. `GEMINI_API_KEY` in this env is used only when `LOGIN_CLIENT_SECRET` is empty. Login has to grant Momentum Gemini; that grant is on in current login.
 
