@@ -409,7 +409,14 @@ function PrimaryStage({ view, kind }: { view: WorkoutView; kind: string }) {
         label={phaseRingLabel(view.phase)}
         format="seconds"
         color={phaseColor(view.phase)}
-        caption={`Rep ${view.currentRep} of ${view.actualTarget}${running ? '' : ' · Held'}`}
+        centerLabel={`Rep ${view.currentRep} of ${view.actualTarget}`}
+        center={
+          <>
+            <p className="text-8xl font-semibold tabular-nums leading-none">{view.currentRep}</p>
+            <p className="mt-1 text-base tabular-nums text-[var(--muted)]">of {view.actualTarget}</p>
+          </>
+        }
+        caption={running ? undefined : 'Held'}
       />
     );
   }
