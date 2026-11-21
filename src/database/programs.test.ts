@@ -5,12 +5,14 @@ import { LIBRARY_PROGRAMS, exercisesForProgram, libraryProgramIdsExist } from '@
 import {
   addExerciseToProgram,
   createProgram,
+  createRoutine,
   createWorkoutSession,
   deleteProgram,
   duplicateProgram,
   finalizeWorkoutSession,
   getPreparedWorkout,
   listPrograms,
+  listRoutines,
   listWorkoutDates,
   moveExercise,
   nextProgramInRotation,
@@ -88,6 +90,22 @@ describe('programs', () => {
     const remaining = await listPrograms();
     expect(remaining.map((row) => row.order)).toEqual([0, 1]);
     expect(await db.exerciseConfigurations.where('programId').equals(only.id).count()).toBe(0);
+  });
+
+  it('removes a deleted program from routine schedules', async () => {
+    const [kept] = await listPrograms();
+    const extra = await createProgram('Day B');
+    await createRoutine('Morning', {
+      programIds: [kept.id, extra.id],
+      shift: [extra.id, null, kept.id],
+      weekdays: [extra.id, kept.id, null, null, null, null, null],
+    });
+    await deleteProgram(extra.id);
+    const morning = (await listRoutines()).find((row) => row.name === 'Morning');
+    expect(morning?.programIds).toEqual([kept.id]);
+    expect(morning?.shift).toEqual([null, kept.id]);
+    expect(morning?.weekdays[0]).toBeNull();
+    expect(morning?.weekdays[1]).toBe(kept.id);
   });
 
   it('moves an exercise within its program', async () => {

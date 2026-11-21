@@ -29,10 +29,6 @@ const WEEKDAYS = [
   { index: 0, label: 'Sunday' },
 ];
 
-function timeValue(routine: Routine): string {
-  return `${String(routine.reminderHour).padStart(2, '0')}:${String(routine.reminderMinute).padStart(2, '0')}`;
-}
-
 export function ScheduleScreen() {
   const routines = useLiveQuery(() => listRoutines(), []);
   const programs = useLiveQuery(() => listPrograms(), []);
@@ -154,7 +150,7 @@ function RoutineEditor({
   };
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <div className="flex items-start justify-between gap-3">
         <label className="block min-w-0 flex-1 text-sm text-[var(--muted)]">
           Name
@@ -267,20 +263,10 @@ function RoutineEditor({
           checked={routine.reminderEnabled}
           onChange={(reminderEnabled) => void updateRoutine(routine.id, { reminderEnabled })}
         />
-        <label className="mt-2 block text-sm text-[var(--muted)]">
-          Time
-          <input
-            type="time"
-            className="mt-2 w-full rounded-2xl border border-[var(--line)] bg-[var(--bg)] px-4 py-3 text-lg text-[var(--fg)]"
-            value={timeValue(routine)}
-            onChange={(event) => {
-              const [hour, minute] = event.target.value.split(':').map(Number);
-              if (Number.isFinite(hour) && Number.isFinite(minute)) {
-                void updateRoutine(routine.id, { reminderHour: hour, reminderMinute: minute });
-              }
-            }}
-          />
-        </label>
+        <ReminderTime
+          routine={routine}
+          onChange={(patch) => void updateRoutine(routine.id, patch)}
+        />
       </div>
 
       <button type="button" className="mt-4 inline-flex items-center gap-1 text-sm text-[var(--muted)]" onClick={onDelete}>
@@ -361,6 +347,44 @@ function ShiftEditor({ routine, programs }: { routine: Routine; programs: Workou
           onChange={(skipMissed) => void updateRoutine(routine.id, { skipMissed })}
         />
       </div>
+    </div>
+  );
+}
+
+function formatReminder(hour: number, minute: number): string {
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function ReminderTime({
+  routine,
+  onChange,
+}: {
+  routine: Routine;
+  onChange: (patch: { reminderHour: number; reminderMinute: number }) => void;
+}) {
+  const value = `${String(routine.reminderHour).padStart(2, '0')}:${String(routine.reminderMinute).padStart(2, '0')}`;
+  return (
+    <div className="mt-2 min-w-0">
+      <p className="text-sm text-[var(--muted)]">Time</p>
+      <label className="relative mt-2 block min-w-0 max-w-full overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--bg)]">
+        <span className="block truncate px-4 py-3 text-lg tabular-nums text-[var(--fg)]" aria-hidden="true">
+          {formatReminder(routine.reminderHour, routine.reminderMinute)}
+        </span>
+        <input
+          type="time"
+          aria-label={`Time, ${formatReminder(routine.reminderHour, routine.reminderMinute)}`}
+          className="reminder-time-input absolute inset-0 m-0 h-full w-full min-w-0 max-w-full cursor-pointer"
+          value={value}
+          onChange={(event) => {
+            const [hour, minute] = event.target.value.split(':').map(Number);
+            if (Number.isFinite(hour) && Number.isFinite(minute)) {
+              onChange({ reminderHour: hour, reminderMinute: minute });
+            }
+          }}
+        />
+      </label>
     </div>
   );
 }

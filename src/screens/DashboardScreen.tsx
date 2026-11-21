@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Button } from '@/components/Button';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Card } from '@/components/ui/Card';
 import { CalendarHeatmap } from '@/components/ui/CalendarHeatmap';
 import { Icon } from '@/components/ui/Icon';
@@ -10,6 +11,7 @@ import { usePreparedWorkout } from '@/hooks/usePreparedWorkout';
 import { useSettings } from '@/hooks/useSettings';
 import { defaultRoutine } from '@/database/seed';
 import {
+  deleteProgram,
   lastCompletedSession,
   listPrograms,
   listRoutines,
@@ -61,34 +63,15 @@ export function DashboardScreen() {
 
   return (
     <main>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs tracking-[0.25em] text-[var(--muted)]">
-            {greetingForNow().toUpperCase()}
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Next workout</h1>
-        </div>
-        <div className="mt-1 flex gap-2">
-          <Link
-            to="/schedule"
-            className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
-          >
-            Schedule
-          </Link>
-          <Link
-            to="/coach"
-            className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
-          >
-            Coach
-          </Link>
-          <Link
-            to="/guide"
-            className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--muted)]"
-          >
-            How it works
-          </Link>
-        </div>
-      </div>
+      <p className="text-xs tracking-[0.25em] text-[var(--muted)]">
+        {greetingForNow().toUpperCase()}
+      </p>
+      <h1 className="mt-3 text-4xl font-semibold tracking-tight">Next workout</h1>
+      <nav aria-label="More" className="mt-5 flex flex-wrap gap-2">
+        <HomeLink to="/schedule">Schedule</HomeLink>
+        <HomeLink to="/coach">Coach</HomeLink>
+        <HomeLink to="/guide">How it works</HomeLink>
+      </nav>
 
       <div className="mt-6 space-y-4">
         {shown.map((plan) => (
@@ -167,6 +150,8 @@ export function DashboardScreen() {
 
 function RoutineCard({ plan, programs }: { plan: ResolvedRoutine; programs: WorkoutProgram[] }) {
   const [override, setOverride] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const programId = override ?? plan.programId;
   const prepared = usePreparedWorkout(programId);
   const navigate = useNavigate();
@@ -188,14 +173,30 @@ function RoutineCard({ plan, programs }: { plan: ResolvedRoutine; programs: Work
   const minutes = estimateWorkoutMinutes(prepared.exercises);
   const sets = totalPrescribedSets(prepared.exercises);
   const startLabel = plan.status === 'rest' ? 'Train anyway' : plan.status === 'done' ? 'Train extra' : 'Start workout';
+  const canDelete = programs.length > 1;
+  const empty = prepared.exercises.length === 0;
 
   return (
     <Card className="p-6">
       <div className="flex items-start justify-between gap-3">
         <SectionLabel>{plan.routine.name}</SectionLabel>
-        <Link to="/schedule" className="text-sm text-[var(--accent)]">
-          Edit
-        </Link>
+        <div className="flex shrink-0 items-center gap-3">
+          {canDelete && !empty ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm text-[var(--muted)]"
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmDelete(true);
+              }}
+            >
+              <Icon name="trash" size={16} /> Delete
+            </button>
+          ) : null}
+          <Link to="/schedule" className="text-sm text-[var(--accent)]">
+            Edit
+          </Link>
+        </div>
       </div>
       <h2 className="mt-2 text-3xl font-semibold tracking-tight">{prepared.program.name}</h2>
       <p className="mt-1 text-[var(--muted)]">{plan.detail}</p>
@@ -248,13 +249,35 @@ function RoutineCard({ plan, programs }: { plan: ResolvedRoutine; programs: Work
           </li>
         ))}
       </ol>
-      {prepared.exercises.length === 0 ? (
-        <p className="mt-4 text-[var(--muted)]">
-          This program has no exercises yet.{' '}
-          <Link to="/configure" className="text-[var(--accent)] underline">
-            Add some
-          </Link>
-        </p>
+      {empty ? (
+        <div className="mt-4">
+          <p className="text-[var(--muted)]">
+            This program has no exercises yet.{' '}
+            <Link
+              to="/configure"
+              state={{ programId: prepared.program.id }}
+              className="text-[var(--accent)] underline"
+            >
+              Add some
+            </Link>
+          </p>
+          {canDelete ? (
+            <Button
+              variant="ghost"
+              className="mt-4 flex w-full items-center justify-center gap-2"
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmDelete(true);
+              }}
+            >
+              <Icon name="trash" size={18} />
+              Delete program
+            </Button>
+          ) : null}
+          {deleteError ? <p className="mt-3 text-sm text-[var(--warn)]">{deleteError}</p> : null}
+        </div>
+      ) : deleteError ? (
+        <p className="mt-4 text-sm text-[var(--warn)]">{deleteError}</p>
       ) : null}
       <Button
         variant="accent"
@@ -268,7 +291,35 @@ function RoutineCard({ plan, programs }: { plan: ResolvedRoutine; programs: Work
         <Icon name="play" size={20} />
         {startLabel}
       </Button>
+      <ConfirmDialog
+        open={confirmDelete}
+        eyebrow="DELETE PROGRAM"
+        title={`Delete ${prepared.program.name}?`}
+        body="Its exercises leave the rotation. Past workouts stay in History and Progress."
+        confirmLabel="Delete program"
+        danger
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          const id = prepared.program.id;
+          setConfirmDelete(false);
+          setOverride(null);
+          void deleteProgram(id).catch((err: unknown) => {
+            setDeleteError(err instanceof Error ? err.message : 'Could not delete.');
+          });
+        }}
+      />
     </Card>
+  );
+}
+
+function HomeLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="inline-flex h-10 shrink-0 items-center whitespace-nowrap rounded-full border border-[var(--line)] px-4 text-sm text-[var(--muted)]"
+    >
+      {children}
+    </Link>
   );
 }
 

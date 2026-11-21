@@ -35,6 +35,25 @@ import { inferStartPosition, startPositionOf } from '@/utils/tempo';
 export async function ensureSeeded(): Promise<void> {
   const programCount = await db.workoutPrograms.count();
   if (programCount === 0) {
+    // A readwrite transaction is illegal inside liveQuery, which is what calls this on first paint.
+    await writeOutsideLiveQuery(seedDatabase);
+    return;
+  }
+  const settings = await db.appSettings.get('app');
+  if (!settings) await writeOutsideLiveQuery(() => db.appSettings.put(DEFAULT_SETTINGS));
+}
+
+function writeOutsideLiveQuery(task: () => Promise<unknown>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      task().then(() => resolve(), reject);
+    }, 0);
+  });
+}
+
+async function seedDatabase(): Promise<void> {
+  if ((await db.workoutPrograms.count()) > 0) return;
+  try {
     await db.transaction(
       'rw',
       [
@@ -56,12 +75,22 @@ export async function ensureSeeded(): Promise<void> {
         if ((await db.routines.count()) === 0) await db.routines.add(defaultRoutine());
       },
     );
-    return;
+  } catch (error) {
+    if (!alreadySeeded(error)) throw error;
   }
-  const settings = await db.appSettings.get('app');
-  if (!settings) {
-    await db.appSettings.put(DEFAULT_SETTINGS);
+}
+
+function alreadySeeded(error: unknown): boolean {
+  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  if (text.includes('ConstraintError') || text.includes('Key already exists')) return true;
+  if (error && typeof error === 'object' && 'inner' in error) {
+    return alreadySeeded((error as { inner: unknown }).inner);
   }
+  if (error && typeof error === 'object' && 'failures' in error) {
+    const failures = (error as { failures?: unknown[] }).failures ?? [];
+    return failures.length > 0 && failures.every(alreadySeeded);
+  }
+  return false;
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -268,9 +297,28 @@ export async function deleteProgram(programId: string): Promise<void> {
   if (programs.length <= 1) {
     throw new Error('Keep at least one program.');
   }
-  await db.transaction('rw', [db.workoutPrograms, db.exerciseConfigurations], async () => {
+  const routines = await listRoutines();
+  const stamp = nowIso();
+  await db.transaction('rw', [db.workoutPrograms, db.exerciseConfigurations, db.routines], async () => {
     await db.exerciseConfigurations.where('programId').equals(programId).delete();
     await db.workoutPrograms.delete(programId);
+    for (const routine of routines) {
+      const programIds = routine.programIds.filter((id) => id !== programId);
+      const shift = routine.shift.filter((id) => id !== programId);
+      const weekdays = routine.weekdays.map((id) => (id === programId ? null : id));
+      const changed =
+        programIds.length !== routine.programIds.length ||
+        shift.length !== routine.shift.length ||
+        weekdays.some((id, index) => id !== routine.weekdays[index]);
+      if (!changed) continue;
+      await db.routines.update(routine.id, {
+        programIds,
+        shift,
+        weekdays,
+        updatedAt: stamp,
+        syncStatus: 'local',
+      });
+    }
   });
   const remaining = programs.filter((row) => row.id !== programId);
   await reorderPrograms(remaining.map((row) => row.id));
